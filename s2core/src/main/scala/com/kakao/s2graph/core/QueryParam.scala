@@ -44,6 +44,16 @@ case class Query(vertices: Seq[Vertex] = Seq.empty[Vertex],
                  withScore: Boolean = true,
                  returnTree: Boolean = false) {
 
+  def cacheKeyBytes: Array[Byte] = {
+    val selectBytes = Bytes.toBytes(selectColumns.toString)
+    val groupBytes = Bytes.toBytes(groupByColumns.toString)
+    val orderByBytes = Bytes.toBytes(orderByColumns.toString)
+    val filterOutBytes = Bytes.toBytes(filterOutQuery.toString)
+    val returnTreeBytes = Bytes.toBytes(returnTree)
+
+    Seq(selectBytes, groupBytes, orderByBytes, filterOutBytes, returnTreeBytes).foldLeft(Array.empty[Byte])(Bytes.add)
+  }
+
   lazy val selectColumnsSet = selectColumns.map { c =>
     if (c == "_from") "from"
     else if (c == "_to") "to"
@@ -278,8 +288,12 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
   }
 
   def toCacheKeyRaw(bytes: Array[Byte]): Array[Byte] = {
+    val transformBytes = Bytes.toBytes(transformer.toString)
+    val whereBytes = Bytes.toBytes(where.toString())
+    val durationBytes = Bytes.toBytes(duration.toString)
+    val conditionBytes = Bytes.add(transformBytes, whereBytes, durationBytes)
     Bytes.add(Bytes.add(bytes, labelWithDir.bytes, toBytes(labelOrderSeq, offset, limit, isInverted)), rank.toHashKeyBytes(),
-      Bytes.add(columnRangeFilterMinBytes, columnRangeFilterMaxBytes))
+      Bytes.add(columnRangeFilterMinBytes, columnRangeFilterMaxBytes, conditionBytes))
   }
 
   def isInverted(isInverted: Boolean): QueryParam = {
