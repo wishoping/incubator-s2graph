@@ -94,8 +94,8 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
   val maxSize = 100000
 
   val cache = CacheBuilder.newBuilder()
-  .expireAfterAccess(1000, TimeUnit.MILLISECONDS)
-  .expireAfterWrite(1000, TimeUnit.MILLISECONDS)
+  .expireAfterAccess(20, TimeUnit.MILLISECONDS)
+  .expireAfterWrite(20, TimeUnit.MILLISECONDS)
   .maximumSize(maxSize).build[java.lang.Long, Future[QueryRequestWithResult]]()
 
   override def fetch(queryRequest: QueryRequest,
@@ -121,7 +121,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
           future onComplete {
             case Success(queryRequestWithResult) =>
               promise.success(queryRequestWithResult)
-              cache.asMap().remove(cacheKey)
+//              cache.asMap().remove(cacheKey)
           }
           future
         case existingFuture => existingFuture
