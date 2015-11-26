@@ -59,8 +59,11 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
 //        logger.debug(s"[MISS]: FutureCache.")
         val future = Future {
           clients.doBlockWithKey(key.toString) { jedis =>
-            val bytes = jedis.get(getBytes(key))
-            QueryResult.fromBytes(storage, queryRequest)(bytes, 0)
+            val v = jedis.get(getBytes(key))
+            if (v == null) Nil
+            else {
+              QueryResult.fromBytes(storage, queryRequest)(v, 0)
+            }
           }
         }
 //        val future = getClient(key).get(key.toString).map { valueOpt =>
