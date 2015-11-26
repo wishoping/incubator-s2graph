@@ -2,6 +2,7 @@ package com.kakao.s2graph.core.storage.hbase
 
 import java.util
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 import com.google.common.cache.CacheBuilder
 import com.kakao.s2graph.core._
@@ -92,11 +93,11 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
   }
 
   val maxSize = 100000
-
+  val expireCount = 100
   val cache = CacheBuilder.newBuilder()
-  .expireAfterAccess(20, TimeUnit.MILLISECONDS)
-  .expireAfterWrite(20, TimeUnit.MILLISECONDS)
-  .maximumSize(maxSize).build[java.lang.Long, Future[QueryRequestWithResult]]()
+  .expireAfterAccess(1000, TimeUnit.MILLISECONDS)
+  .expireAfterWrite(1000, TimeUnit.MILLISECONDS)
+  .maximumSize(maxSize).build[java.lang.Long, (AtomicInteger, Future[QueryRequestWithResult])]()
 
   override def fetch(queryRequest: QueryRequest,
                      prevStepScore: Double,
@@ -108,7 +109,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       val keyBytes = toCacheKeyBytes(request)
       val cacheKey = queryRequest.queryParam.toCacheKey(keyBytes)
       val promise = Promise[QueryRequestWithResult]
-      cache.asMap().putIfAbsent(cacheKey, promise.future) match {
+      cache.asMap().putIfAbsent(cacheKey, (new AtomicInteger(0), promise.future)) match {
         case null =>
           val future = storage.client.get(request) withCallback { kvs =>
             val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
@@ -124,7 +125,10 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
 //              cache.asMap().remove(cacheKey)
           }
           future
-        case existingFuture => existingFuture
+        case (hitCount, existingFuture) =>
+          val newHitCount = hitCount.incrementAndGet()
+          if (newHitCount > expireCount) cache.asMap().remove(cacheKey)
+          existingFuture
       }
     }
 
