@@ -106,50 +106,60 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       val queryParam = queryRequest.queryParam
       val request = buildRequest(queryRequest)
       val cacheKey = queryParam.toCacheKey(toCacheKeyBytes(request))
+
+      val d = new Deferred[QueryRequestWithResult]()
       def fetchDefer = storage.client.get(request) withCallback { kvs =>
         val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
+        d.withCallback { queryRequestWithResult =>
+          QueryRequestWithResult(queryRequest, QueryResult(edgeWithScores))
+        }
         QueryRequestWithResult(queryRequest, QueryResult(edgeWithScores))
       } recoverWith { ex =>
         logger.error(s"fetchQueryParam failed. fallback return.", ex)
+        d.withCallback { queryRequestWithResult =>
+          QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
+        }
         QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
       }
 
-      cache.asMap().putIfAbsent(cacheKey, (new AtomicInteger(0), fetchDefer)) match {
+      cache.asMap().putIfAbsent(cacheKey, (new AtomicInteger(0), d)) match {
         case null => fetchDefer
         case (oldHitCount, existingDefer) =>
           val newHitCount = oldHitCount.incrementAndGet()
           if (newHitCount > expireCount) cache.asMap().remove(cacheKey)
           existingDefer
       }
+//      fetchDefer
 
     }
-
-    storage.cacheOpt match {
-      case None => fetchInner
-      case Some(cache) =>
-        val queryParam = queryRequest.queryParam
-        val request = buildRequest(queryRequest)
-        val cacheKey = queryParam.toCacheKey(toCacheKeyBytes(request))
-
-        def setCacheAfterFetch: Deferred[QueryRequestWithResult] =
-          fetchInner withCallback { queryResult: QueryRequestWithResult =>
-            cache.put(cacheKey, Seq(queryResult.queryResult))
-            queryResult
-          }
-        if (queryParam.cacheTTLInMillis > 0) {
-          val cacheTTL = queryParam.cacheTTLInMillis
-          if (cache.asMap().containsKey(cacheKey)) {
-            val cachedVal = cache.asMap().get(cacheKey)
-            if (cachedVal != null && cachedVal.nonEmpty && queryParam.timestamp - cachedVal.head.timestamp < cacheTTL)
-              Deferred.fromResult(QueryRequestWithResult(queryRequest, cachedVal.head))
-            else
-              setCacheAfterFetch
-          } else
-            setCacheAfterFetch
-        } else {
-          fetchInner
-        }
-    }
+    fetchInner
+//
+//    storage.cacheOpt match {
+//      case None => fetchInner
+//      case Some(cache) =>
+//        val queryParam = queryRequest.queryParam
+//        val request = buildRequest(queryRequest)
+//        val cacheKey = queryParam.toCacheKey(toCacheKeyBytes(request))
+//
+//        def setCacheAfterFetch: Deferred[QueryRequestWithResult] =
+//          fetchInner withCallback { queryResult: QueryRequestWithResult =>
+//            cache.put(cacheKey, Seq(queryResult.queryResult))
+//            queryResult
+//          }
+//        if (queryParam.cacheTTLInMillis > 0) {
+//          val cacheTTL = queryParam.cacheTTLInMillis
+//          if (cache.asMap().containsKey(cacheKey)) {
+//            val cachedVal = cache.asMap().get(cacheKey)
+//            if (cachedVal != null && cachedVal.nonEmpty && queryParam.timestamp - cachedVal.head.timestamp < cacheTTL)
+//              Deferred.fromResult(QueryRequestWithResult(queryRequest, cachedVal.head))
+//            else
+//              setCacheAfterFetch
+//          } else
+//            setCacheAfterFetch
+//        } else {
+//          fetchInner
+//        }
+//    }
   }
 
   override def toCacheKeyBytes(getRequest: GetRequest): Array[Byte] = {
