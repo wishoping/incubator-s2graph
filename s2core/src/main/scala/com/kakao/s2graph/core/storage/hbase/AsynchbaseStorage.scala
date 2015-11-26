@@ -28,7 +28,7 @@ object AsynchbaseStorage {
   val emptyKVs = new util.ArrayList[KeyValue]()
 
 
-  def makeClient(config: Config, overrideKv: (String, String)*)(executor: Executor) = {
+  def makeClient(config: Config, overrideKv: (String, String)*) = {
     val asyncConfig: org.hbase.async.Config = new org.hbase.async.Config()
 
     for (entry <- config.entrySet() if entry.getKey.contains("hbase")) {
@@ -39,7 +39,7 @@ object AsynchbaseStorage {
       asyncConfig.overrideConfig(k, v)
     }
 
-    val client = new HBaseClient(asyncConfig, executor)
+    val client = new HBaseClient(asyncConfig)
     logger.info(s"Asynchbase: ${client.getConfig.dumpConfiguration()}")
     client
   }
@@ -55,16 +55,14 @@ class AsynchbaseStorage(config: Config, vertexCache: Cache[java.lang.Long, Optio
 
   import Extensions.DeferOps
 
-  val executor = Executors.newCachedThreadPool()
-  val executionContext = ExecutionContext.fromExecutor(executor)
-  val client = AsynchbaseStorage.makeClient(config)(executor)
-  val queryBuilder = new AsynchbaseQueryBuilder(this)(executionContext)
+  val client = AsynchbaseStorage.makeClient(config)
+  val queryBuilder = new AsynchbaseQueryBuilder(this)(ec)
   val mutationBuilder = new AsynchbaseMutationBuilder(this)(ec)
 
-  val cacheOpt = Option(new RedisCache(config, this)(executionContext))
+  val cacheOpt = Option(new RedisCache(config, this)(ec))
   val vertexCacheOpt = Option(vertexCache)
 
-  private val clientWithFlush = AsynchbaseStorage.makeClient(config, "hbase.rpcs.buffered_flush_interval" -> "0")(executor)
+  private val clientWithFlush = AsynchbaseStorage.makeClient(config, "hbase.rpcs.buffered_flush_interval" -> "0")
   private val clients = Seq(client, clientWithFlush)
 
   private val clientFlushInterval = config.getInt("hbase.rpcs.buffered_flush_interval").toString().toShort

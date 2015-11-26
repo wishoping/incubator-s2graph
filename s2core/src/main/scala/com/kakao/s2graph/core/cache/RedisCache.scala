@@ -41,6 +41,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
   .expireAfterWrite(1000, TimeUnit.MILLISECONDS)
   .maximumSize(maxSize).build[java.lang.Long, Future[Seq[QueryResult]]]()
 
+
   private def buildRequest(queryRequest: QueryRequest): GetRequest = builder.buildRequest(queryRequest)
   private def toCacheKeyBytes(getRequest: GetRequest): Array[Byte] = builder.toCacheKeyBytes(getRequest)
 
