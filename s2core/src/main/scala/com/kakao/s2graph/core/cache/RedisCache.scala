@@ -19,20 +19,21 @@ import scala.util.{Failure, Success}
 class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: ExecutionContext)
   extends SCache[QueryRequest, Future[Seq[QueryResult]]] {
 
-  implicit val akkaSystem = akka.actor.ActorSystem()
+//  implicit val akkaSystem = akka.actor.ActorSystem()
+//
+//  val instances = if (config.hasPath("redis.instances")) config.getStringList("redis.instances").toList else List("localhost")
+//  val database = if (config.hasPath("redis.database")) config.getInt("redis.database") else 0
+//  val clients = instances map { s =>
+//    val sp = s.split(':')
+//    val (host, port) = if (sp.length > 1) (sp(0), sp(1).toInt) else (sp(0), 6379)
+//    RedisClient(host = host, port = port, db = Option(database))
+//  } toVector
+//  val poolSize = clients.size
 
-  val instances = if (config.hasPath("redis.instances")) config.getStringList("redis.instances").toList else List("localhost")
-  val database = if (config.hasPath("redis.database")) config.getInt("redis.database") else 0
-  val clients = instances map { s =>
-    val sp = s.split(':')
-    val (host, port) = if (sp.length > 1) (sp(0), sp(1).toInt) else (sp(0), 6379)
-    RedisClient(host = host, port = port, db = Option(database))
-  } toVector
-  val poolSize = clients.size
+//  private def shardKey(key: Any): Int = GraphUtil.murmur3Int(key.toString) % poolSize
+//  def getClient(key: Any): RedisClient = clients.get(shardKey(key))
 
-  private def shardKey(key: Any): Int = GraphUtil.murmur3Int(key.toString) % poolSize
-  def getClient(key: Any): RedisClient = clients.get(shardKey(key))
-
+  val clients = new WithRedis(config)
   val builder = new AsynchbaseQueryBuilder(storage)
 
   val maxSize = 10000
@@ -56,12 +57,18 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
     cache.asMap().putIfAbsent(key, promise.future) match {
       case null =>
 //        logger.debug(s"[MISS]: FutureCache.")
-        val future = getClient(key).get(key.toString).map { valueOpt =>
-          valueOpt match {
-            case None => Nil
-            case Some(ls) => QueryResult.fromBytes(storage, queryRequest)(ls.toArray, 0)
+        val future = Future {
+          clients.doBlockWithKey(key.toString) { jedis =>
+            val bytes = jedis.get(getBytes(key))
+            QueryResult.fromBytes(storage, queryRequest)(bytes, 0)
           }
         }
+//        val future = getClient(key).get(key.toString).map { valueOpt =>
+//          valueOpt match {
+//            case None => Nil
+//            case Some(ls) => QueryResult.fromBytes(storage, queryRequest)(ls.toArray, 0)
+//          }
+//        }
         future onComplete {
           case Success(value) =>
             promise.success(value)
@@ -110,8 +117,13 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
         val key = toCacheKey(queryRequest)
         val queryResultLs = queryResultLsTry.get
         val bytes = QueryResult.toBytes(storage)(queryResultLs)
-
-        getClient(key).setex(key.toString, toTs(queryRequest), ByteString(bytes)) onComplete {
+        val future = Future {
+          clients.doBlockWithKey(key.toString) { jedis =>
+            jedis.setex(getBytes(key), toTs(queryRequest), bytes)
+          }
+        }
+//        val future =  getClient(key).setex(key.toString, toTs(queryRequest), ByteString(bytes))
+        future onComplete {
           case Success(ret) =>
             cache.asMap().remove(key)
           case Failure(ex) =>
