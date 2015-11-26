@@ -115,6 +115,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       }
 
       cache.asMap().putIfAbsent(cacheKey, (new AtomicInteger(0), fetchDefer)) match {
+        case null => fetchDefer
         case (oldHitCount, existingDefer) =>
           val newHitCount = oldHitCount.incrementAndGet()
           if (newHitCount > expireCount) cache.asMap().remove(cacheKey)
