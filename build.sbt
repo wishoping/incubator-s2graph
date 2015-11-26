@@ -15,7 +15,7 @@ lazy val commonSettings = Seq(
     "Twitter Maven" at "http://maven.twttr.com",
     "sonatype-snapshots" at "https://oss.sonatype.org/content/repositories/snapshots",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
-    "rediscala" at "http://dl.bintray.com/etaty/maven"
+    "spray repo" at "http://repo.spray.io"
   )
 )
 

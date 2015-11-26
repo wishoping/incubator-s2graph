@@ -62,7 +62,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
         if (v == null) Nil
         else QueryResult.fromBytes(storage, queryRequest)(v, 0)
 
-      logger.debug(s"redisGet: ${ret}")
+//      logger.debug(s"redisGet: ${ret}")
       ret
     }
   }
@@ -70,7 +70,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
     val key = toCacheKey(queryRequest)
     val bytes = QueryResult.toBytes(storage)(queryResultLs)
     clients.doBlockWithKey(key.toString) { jedis =>
-      logger.debug(s"redisPut: $key, ${toTs(queryRequest)}, ${bytes.toList}")
+//      logger.debug(s"redisPut: $key, ${toTs(queryRequest)}, ${bytes.toList}")
       jedis.setex(getBytes(key), toTs(queryRequest), bytes)
     }
   }
