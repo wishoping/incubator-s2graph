@@ -19,7 +19,7 @@ import scala.util.{Failure, Success}
 class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: ExecutionContext)
   extends SCache[QueryRequest, Future[Seq[QueryResult]]] {
 
-  implicit val akkaSystem = akka.actor.ActorSystem()
+  implicit val akkaSystem = akka.actor.ActorSystem("blocking")
 
   val instances = if (config.hasPath("redis.instances")) config.getStringList("redis.instances").toList else List("localhost")
   val database = if (config.hasPath("redis.database")) config.getInt("redis.database") else 0
@@ -37,8 +37,8 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
 
   val maxSize = 10000
   val cache = CacheBuilder.newBuilder()
-  .expireAfterAccess(1000, TimeUnit.MILLISECONDS)
-//  .expireAfterWrite(100, TimeUnit.MILLISECONDS)
+  .expireAfterAccess(10, TimeUnit.MILLISECONDS)
+  .expireAfterWrite(10, TimeUnit.MILLISECONDS)
   .maximumSize(maxSize).build[java.lang.Long, Future[Seq[QueryResult]]]()
 
   private def buildRequest(queryRequest: QueryRequest): GetRequest = builder.buildRequest(queryRequest)
