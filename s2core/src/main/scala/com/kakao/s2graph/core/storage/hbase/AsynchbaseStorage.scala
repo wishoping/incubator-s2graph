@@ -1,6 +1,7 @@
 package com.kakao.s2graph.core.storage.hbase
 
 import java.util
+import java.util.concurrent.{Executors, Executor}
 
 import com.google.common.cache.Cache
 import com.kakao.s2graph.core.GraphExceptions.FetchTimeoutException
@@ -13,7 +14,6 @@ import com.kakao.s2graph.core.utils.{Extensions, logger}
 import com.stumbleupon.async.Deferred
 import com.typesafe.config.Config
 import org.hbase.async._
-
 import scala.collection.JavaConversions._
 import scala.collection.Seq
 import scala.concurrent.duration.Duration
@@ -28,7 +28,7 @@ object AsynchbaseStorage {
   val emptyKVs = new util.ArrayList[KeyValue]()
 
 
-  def makeClient(config: Config, overrideKv: (String, String)*) = {
+  def makeClient(config: Config, overrideKv: (String, String)*)(executor: Executor) = {
     val asyncConfig: org.hbase.async.Config = new org.hbase.async.Config()
 
     for (entry <- config.entrySet() if entry.getKey.contains("hbase")) {
@@ -39,7 +39,7 @@ object AsynchbaseStorage {
       asyncConfig.overrideConfig(k, v)
     }
 
-    val client = new HBaseClient(asyncConfig)
+    val client = new HBaseClient(asyncConfig, executor)
     logger.info(s"Asynchbase: ${client.getConfig.dumpConfiguration()}")
     client
   }
@@ -55,14 +55,16 @@ class AsynchbaseStorage(config: Config, vertexCache: Cache[java.lang.Long, Optio
 
   import Extensions.DeferOps
 
-  val client = AsynchbaseStorage.makeClient(config)
-  val queryBuilder = new AsynchbaseQueryBuilder(this)(ec)
+  val executor = Executors.newCachedThreadPool()
+  val executionContext = ExecutionContext.fromExecutor(executor)
+  val client = AsynchbaseStorage.makeClient(config)(executor)
+  val queryBuilder = new AsynchbaseQueryBuilder(this)(executionContext)
   val mutationBuilder = new AsynchbaseMutationBuilder(this)(ec)
 
-  val cacheOpt = Option(new RedisCache(config, this))
+  val cacheOpt = Option(new RedisCache(config, this)(executionContext))
   val vertexCacheOpt = Option(vertexCache)
 
-  private val clientWithFlush = AsynchbaseStorage.makeClient(config, "hbase.rpcs.buffered_flush_interval" -> "0")
+  private val clientWithFlush = AsynchbaseStorage.makeClient(config, "hbase.rpcs.buffered_flush_interval" -> "0")(executor)
   private val clients = Seq(client, clientWithFlush)
 
   private val clientFlushInterval = config.getInt("hbase.rpcs.buffered_flush_interval").toString().toShort

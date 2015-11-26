@@ -61,7 +61,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
             case None => Nil
             case Some(ls) => QueryResult.fromBytes(storage, queryRequest)(ls.toArray, 0)
           }
-        }
+        }(ec)
         future onComplete {
           case Success(value) =>
             promise.success(value)
@@ -111,7 +111,8 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
         val queryResultLs = queryResultLsTry.get
         val bytes = QueryResult.toBytes(storage)(queryResultLs)
 
-        getClient(key).setex(key.toString, toTs(queryRequest), ByteString(bytes)) onComplete {
+        val future = getClient(key).setex(key.toString, toTs(queryRequest), ByteString(bytes))
+        future onComplete {
           case Success(ret) =>
             cache.asMap().remove(key)
           case Failure(ex) =>

@@ -1,7 +1,9 @@
 package com.kakao.s2graph.core.storage.hbase
 
 import java.util
+import java.util.concurrent.TimeUnit
 
+import com.google.common.cache.CacheBuilder
 import com.kakao.s2graph.core._
 import com.kakao.s2graph.core.mysqls.LabelMeta
 import com.kakao.s2graph.core.storage.QueryBuilder
@@ -13,7 +15,8 @@ import org.hbase.async.GetRequest
 
 import scala.collection.JavaConversions._
 import scala.collection.{Map, Seq}
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Promise, ExecutionContext, Future}
+import scala.util.Success
 
 class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionContext)
   extends QueryBuilder[GetRequest, Future[QueryRequestWithResult]](storage) {
@@ -88,6 +91,13 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
     fetch(queryRequest, 1.0, isInnerCall = true, parentEdges = Nil)
   }
 
+  val maxSize = 100000
+
+  val cache = CacheBuilder.newBuilder()
+  .expireAfterAccess(1000, TimeUnit.MILLISECONDS)
+  .expireAfterWrite(1000, TimeUnit.MILLISECONDS)
+  .maximumSize(maxSize).build[java.lang.Long, Future[QueryRequestWithResult]]()
+
   override def fetch(queryRequest: QueryRequest,
                      prevStepScore: Double,
                      isInnerCall: Boolean,
@@ -95,13 +105,27 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
 
     def fetchInner: Future[QueryRequestWithResult] = {
       val request = buildRequest(queryRequest)
-      storage.client.get(request) withCallback { kvs =>
-        val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
-        QueryRequestWithResult(queryRequest, QueryResult(edgeWithScores))
-      } recoverWith { ex =>
-        logger.error(s"fetchQueryParam failed. fallback return.", ex)
-        QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
-      } toFuture
+      val keyBytes = toCacheKeyBytes(request)
+      val cacheKey = queryRequest.queryParam.toCacheKey(keyBytes)
+      val promise = Promise[QueryRequestWithResult]
+      cache.asMap().putIfAbsent(cacheKey, promise.future) match {
+        case null =>
+          val future = storage.client.get(request) withCallback { kvs =>
+            val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
+            QueryRequestWithResult(queryRequest, QueryResult(edgeWithScores))
+          } recoverWith { ex =>
+            logger.error(s"fetchQueryParam failed. fallback return.", ex)
+            QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
+          } toFuture
+
+          future onComplete {
+            case Success(queryRequestWithResult) =>
+              promise.success(queryRequestWithResult)
+              cache.asMap().remove(cacheKey)
+          }
+          future
+        case existingFuture => existingFuture
+      }
     }
 
     val (query, stepIdx, vertex, queryParam) = QueryRequest.unapply(queryRequest).get
