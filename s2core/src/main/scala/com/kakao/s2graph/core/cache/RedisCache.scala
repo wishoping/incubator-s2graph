@@ -36,7 +36,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
   val builder = new AsynchbaseQueryBuilder(storage)
 
   val maxSize = 10000
-  val cache = CacheBuilder.newBuilder().expireAfterWrite(100, TimeUnit.MILLISECONDS)
+  val cache = CacheBuilder.newBuilder()
   .maximumSize(maxSize).build[java.lang.Long, Future[Seq[QueryResult]]]()
 
   private def buildRequest(queryRequest: QueryRequest): GetRequest = builder.buildRequest(queryRequest)
@@ -53,6 +53,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
     val promise = Promise[Seq[QueryResult]]
     cache.asMap().putIfAbsent(key, promise.future) match {
       case null =>
+        logger.debug(s"[MISS]: FutureCache.")
         val future = getClient(key).get(key.toString).map { valueOpt =>
           valueOpt match {
             case None => Nil
@@ -60,10 +61,13 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
           }
         }
         future onComplete {
-          case Success(value) => promise.success(value)
+          case Success(value) =>
+            promise.success(value)
+            cache.asMap().remove(key)
           case Failure(ex) =>
             logger.error(s"getIfPresent failed.")
-            cache.asMap().remove(key, promise.future)
+            cache.asMap().remove(key)
+//            cache.asMap().remove(key, promise.future)
         }
 //        future.onComplete { valueOpt =>
 //          promise.complete(valueOpt)
@@ -71,7 +75,9 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
 //        }
 
         future
-      case existingFuture => existingFuture
+      case existingFuture =>
+        logger.debug(s"[HIT]: FutureCache.")
+        existingFuture
     }
 
   }

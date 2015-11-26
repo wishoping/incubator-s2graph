@@ -119,13 +119,13 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
           val cacheTTL = queryParam.cacheTTLInMillis
           val cacheValLsFuture = cache.getIfPresent(queryRequest)
           cacheValLsFuture.flatMap { cacheValLs =>
-            logger.debug(s"[CACHE]: ${cacheValLs.nonEmpty}, ${System.currentTimeMillis()}, ${cacheValLs.headOption.map(_.timestamp)}")
+//            logger.debug(s"[CACHE]: ${cacheValLs.nonEmpty}, ${System.currentTimeMillis()}, ${cacheValLs.headOption.map(_.timestamp)}")
 
             if (cacheValLs.nonEmpty && System.currentTimeMillis() < cacheValLs.head.timestamp + cacheTTL) {
-              logger.debug(s"[Hit]")
+//              logger.debug(s"[Hit]")
               Future.successful(QueryRequestWithResult(queryRequest, cacheValLs.head))
             } else {
-              logger.debug(s"[Miss]")
+//              logger.debug(s"[Miss]")
               val future = fetchInner
               cache.put(queryRequest, future.map(value => Seq(value.queryResult)))
               future
