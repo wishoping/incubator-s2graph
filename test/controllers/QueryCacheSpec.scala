@@ -61,9 +61,10 @@ class QueryCacheSpec extends SpecCommon {
       }
     }
 
-    "tc2: query with {id: 1, ttl: 3000}" in {
+    "tc2: query with {id: 1, ttl: 5000}" in {
       running(FakeApplication()) {
-        var jsRslt = getEdges(queryWithTTL(1, 3000))
+        val ttl = 5000
+        var jsRslt = getEdges(queryWithTTL(1, ttl))
         var cacheRemain = (jsRslt \\ "cacheRemain").head
         // before update: is_blocked is false
         (jsRslt \\ "is_blocked").head must equalTo(JsBoolean(false))
@@ -77,15 +78,15 @@ class QueryCacheSpec extends SpecCommon {
         jsRslt = contentAsJson(EdgeController.mutateAndPublish(bulkEdges, withWait = true))
 
         // prop 'is_blocked' still false, cause queryResult on cache
-        jsRslt = getEdges(queryWithTTL(1, 3000))
+        jsRslt = getEdges(queryWithTTL(1, ttl))
 
         println("==========")
         println(jsRslt.toString)
 
         (jsRslt \\ "is_blocked").head must equalTo(JsBoolean(false))
         // after wait 3000ms prop 'is_blocked' is updated to true, cache cleared
-        Thread.sleep(3000)
-        jsRslt = getEdges(queryWithTTL(1, 3000))
+        Thread.sleep(ttl)
+        jsRslt = getEdges(queryWithTTL(1, ttl))
         (jsRslt \\ "is_blocked").head must equalTo(JsBoolean(true))
       }
     }

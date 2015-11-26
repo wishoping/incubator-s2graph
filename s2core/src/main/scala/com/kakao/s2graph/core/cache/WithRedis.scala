@@ -1,7 +1,6 @@
 package com.kakao.s2graph.core.cache
 
 import com.kakao.s2graph.core.GraphUtil
-import com.kakao.s2graph.core.utils.logger
 import com.typesafe.config.Config
 import redis.clients.jedis.exceptions.JedisException
 import redis.clients.jedis.{Protocol, Jedis, JedisPool, JedisPoolConfig}

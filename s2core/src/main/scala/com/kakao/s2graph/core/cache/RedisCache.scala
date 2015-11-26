@@ -3,18 +3,16 @@ package com.kakao.s2graph.core.cache
 
 import java.util.concurrent.TimeUnit
 
-import akka.util.ByteString
-import com.google.common.cache.CacheBuilder
 import com.kakao.s2graph.core.storage.hbase.{AsynchbaseStorage, AsynchbaseQueryBuilder}
 import com.kakao.s2graph.core.utils.logger
-import com.kakao.s2graph.core.{GraphUtil, QueryRequest, QueryResult}
+import com.kakao.s2graph.core.{QueryRequest, QueryResult}
 import com.kakao.s2graph.core.storage.{SCache}
 import com.typesafe.config.Config
 import org.hbase.async.GetRequest
-import redis.RedisClient
-import scala.concurrent.{Promise, Future, ExecutionContext}
-import scala.collection.JavaConversions._
-import scala.util.{Failure, Success}
+import spray.caching._
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Future, ExecutionContext}
+import scala.util.{Success, Failure}
 
 class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: ExecutionContext)
   extends SCache[QueryRequest, Future[Seq[QueryResult]]] {
@@ -37,10 +35,14 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
   val builder = new AsynchbaseQueryBuilder(storage)
 
   val maxSize = 10000
-  val cache = CacheBuilder.newBuilder()
-  .expireAfterAccess(100, TimeUnit.MILLISECONDS)
-  .expireAfterWrite(100, TimeUnit.MILLISECONDS)
-  .maximumSize(maxSize).build[java.lang.Long, Future[Seq[QueryResult]]]()
+  val ttl = Duration(100, TimeUnit.MILLISECONDS)
+  val tti = Duration(50, TimeUnit.MILLISECONDS)
+//  val cache = CacheBuilder.newBuilder()
+//  .expireAfterAccess(100, TimeUnit.MILLISECONDS)
+//  .expireAfterWrite(100, TimeUnit.MILLISECONDS)
+//  .maximumSize(maxSize).build[java.lang.Long, Future[Seq[QueryResult]]]()
+
+  val cache: Cache[Seq[QueryResult]] = LruCache(maxCapacity = maxSize, initialCapacity = maxSize, timeToLive = ttl, timeToIdle = tti)
 
   private def buildRequest(queryRequest: QueryRequest): GetRequest = builder.buildRequest(queryRequest)
   private def toCacheKeyBytes(getRequest: GetRequest): Array[Byte] = builder.toCacheKeyBytes(getRequest)
@@ -51,91 +53,41 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
   private def getBytes(value: Any): Array[Byte] = value.toString().getBytes("UTF-8")
   private def toTs(queryRequest: QueryRequest): Int = (queryRequest.queryParam.cacheTTLInMillis / 1000).toInt
 
-  override def getIfPresent(queryRequest: QueryRequest): Future[Seq[QueryResult]] = {
+  def redisGet(queryRequest: QueryRequest): Seq[QueryResult] = {
     val key = toCacheKey(queryRequest)
-    val promise = Promise[Seq[QueryResult]]
-    cache.asMap().putIfAbsent(key, promise.future) match {
-      case null =>
-//        logger.debug(s"[MISS]: FutureCache.")
-        val future = Future {
-          clients.doBlockWithKey(key.toString) { jedis =>
-            val v = jedis.get(getBytes(key))
-            if (v == null) Nil
-            else {
-              QueryResult.fromBytes(storage, queryRequest)(v, 0)
-            }
-          }
-        }
-//        val future = getClient(key).get(key.toString).map { valueOpt =>
-//          valueOpt match {
-//            case None => Nil
-//            case Some(ls) => QueryResult.fromBytes(storage, queryRequest)(ls.toArray, 0)
-//          }
-//        }
-        future onComplete {
-          case Success(value) =>
-            promise.success(value)
-//            cache.asMap().remove(key)
-          case Failure(ex) =>
-//            logger.error(s"getIfPresent failed.")
-            cache.asMap().remove(key)
-//            cache.asMap().remove(key, promise.future)
-        }
-//        future.onComplete { valueOpt =>
-//          promise.complete(valueOpt)
-//          if (valueOpt.isFailure) cache.asMap().remove(key, promise.future)
-//        }
+    clients.doBlockWithKey(key.toString) { jedis =>
+      val v = jedis.get(getBytes(key))
 
-        future
-      case existingFuture =>
-//        logger.debug(s"[HIT]: FutureCache.")
-        existingFuture
+      val ret =
+        if (v == null) Nil
+        else QueryResult.fromBytes(storage, queryRequest)(v, 0)
+
+      logger.debug(s"redisGet: ${ret}")
+      ret
     }
-
+  }
+  def redisPut(queryRequest: QueryRequest, queryResultLs: Seq[QueryResult]): String = {
+    val key = toCacheKey(queryRequest)
+    val bytes = QueryResult.toBytes(storage)(queryResultLs)
+    clients.doBlockWithKey(key.toString) { jedis =>
+      logger.debug(s"redisPut: $key, ${toTs(queryRequest)}, ${bytes.toList}")
+      jedis.setex(getBytes(key), toTs(queryRequest), bytes)
+    }
   }
 
-  def remove(queryRequest: QueryRequest): Unit = cache.asMap().remove(toCacheKey(queryRequest))
+  override def getIfPresent(queryRequest: QueryRequest): Future[Seq[QueryResult]] = {
+    val key = toCacheKey(queryRequest)
+    cache(key) { redisGet(queryRequest) }
+  }
+
+//  def remove(queryRequest: QueryRequest): Unit = cache.asMap().remove(toCacheKey(queryRequest))
 
   override def put(queryRequest: QueryRequest, queryResultLsFuture: Future[Seq[QueryResult]]): Unit = {
-//    val key = toCacheKey(queryRequest)
-//    queryResultLsFuture onComplete {
-//      case Success(queryResultLs) =>
-//        val bytes = QueryResult.toBytes(storage)(queryResultLs)
-//
-//
-//        val future = getClient(key).setex(key.toString, toTs(queryRequest), ByteString(bytes)).flatMap { ret =>
-//          getClient(key).get(key.toString).map { valueOpt =>
-//            valueOpt match {
-//              case None => Nil
-//              case Some(ls) => QueryResult.fromBytes(storage, queryRequest)(ls.toArray, 0)
-//            }
-//          }
-//        }
-//        cache.asMap().put(key, future)
-//      case Failure(ex) =>
-//        logger.error(s"fetch failed.")
-//    }
-    queryResultLsFuture.onComplete { queryResultLsTry =>
-      if (queryResultLsTry.isSuccess) {
-        val key = toCacheKey(queryRequest)
-        val queryResultLs = queryResultLsTry.get
-        val bytes = QueryResult.toBytes(storage)(queryResultLs)
-        val future = Future {
-          clients.doBlockWithKey(key.toString) { jedis =>
-            jedis.setex(getBytes(key), toTs(queryRequest), bytes)
-          }
-        }
-//        val future =  getClient(key).setex(key.toString, toTs(queryRequest), ByteString(bytes))
-        future onComplete {
-          case Success(ret) =>
-            cache.asMap().remove(key)
-          case Failure(ex) =>
-            logger.error(s"set to redis failed.")
-        }
-//        clients.doBlockWithKey(key.toString) { jedis =>
-//          jedis.setex(getBytes(key), toTs(queryRequest), bytes)
-//        }
-      }
+    queryResultLsFuture.onComplete {
+      case Failure(ex) =>
+        logger.error(s"put to redis failed.")
+      case Success(queryResultLs) =>
+        redisPut(queryRequest, queryResultLs)
     }
   }
 }
