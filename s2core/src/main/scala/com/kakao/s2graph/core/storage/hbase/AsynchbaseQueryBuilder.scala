@@ -1,7 +1,10 @@
 package com.kakao.s2graph.core.storage.hbase
 
 import java.util
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
+import com.google.common.cache.CacheBuilder
 import com.kakao.s2graph.core._
 import com.kakao.s2graph.core.mysqls.LabelMeta
 import com.kakao.s2graph.core.storage.QueryBuilder
@@ -13,12 +16,13 @@ import org.hbase.async.GetRequest
 
 import scala.collection.JavaConversions._
 import scala.collection.{Map, Seq}
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Promise, ExecutionContext, Future}
 
 class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionContext)
   extends QueryBuilder[GetRequest, Deferred[QueryRequestWithResult]](storage) {
 
   import Extensions.DeferOps
+
 
   override def buildRequest(queryRequest: QueryRequest): GetRequest = {
     val srcVertex = queryRequest.vertex
@@ -86,20 +90,37 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
     fetch(queryRequest, 1.0, isInnerCall = true, parentEdges = Nil)
   }
 
+  val maxSize = 100000
+  val expireCount = 100
+  val cache = CacheBuilder.newBuilder()
+  .expireAfterAccess(10, TimeUnit.MILLISECONDS)
+  .expireAfterWrite(10, TimeUnit.MILLISECONDS)
+  .maximumSize(maxSize).build[java.lang.Integer, (AtomicInteger, Deferred[QueryRequestWithResult])]()
+
   override def fetch(queryRequest: QueryRequest,
                      prevStepScore: Double,
                      isInnerCall: Boolean,
                      parentEdges: Seq[EdgeWithScore]): Deferred[QueryRequestWithResult] = {
 
     def fetchInner: Deferred[QueryRequestWithResult] = {
+      val queryParam = queryRequest.queryParam
       val request = buildRequest(queryRequest)
-      storage.client.get(request) withCallback { kvs =>
+      val cacheKey = queryParam.toCacheKey(toCacheKeyBytes(request))
+      def fetchDefer = storage.client.get(request) withCallback { kvs =>
         val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
         QueryRequestWithResult(queryRequest, QueryResult(edgeWithScores))
       } recoverWith { ex =>
         logger.error(s"fetchQueryParam failed. fallback return.", ex)
         QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
       }
+
+      cache.asMap().putIfAbsent(cacheKey, (new AtomicInteger(0), fetchDefer)) match {
+        case (oldHitCount, existingDefer) =>
+          val newHitCount = oldHitCount.incrementAndGet()
+          if (newHitCount > expireCount) cache.asMap().remove(cacheKey)
+          existingDefer
+      }
+
     }
 
     storage.cacheOpt match {
