@@ -63,7 +63,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
         future onComplete {
           case Success(value) =>
             promise.success(value)
-            cache.asMap().remove(key)
+//            cache.asMap().remove(key)
           case Failure(ex) =>
 //            logger.error(s"getIfPresent failed.")
             cache.asMap().remove(key)
@@ -82,13 +82,39 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
 
   }
 
+  def remove(queryRequest: QueryRequest): Unit = cache.asMap().remove(toCacheKey(queryRequest))
+
   override def put(queryRequest: QueryRequest, queryResultLsFuture: Future[Seq[QueryResult]]): Unit = {
+//    val key = toCacheKey(queryRequest)
+//    queryResultLsFuture onComplete {
+//      case Success(queryResultLs) =>
+//        val bytes = QueryResult.toBytes(storage)(queryResultLs)
+//
+//
+//        val future = getClient(key).setex(key.toString, toTs(queryRequest), ByteString(bytes)).flatMap { ret =>
+//          getClient(key).get(key.toString).map { valueOpt =>
+//            valueOpt match {
+//              case None => Nil
+//              case Some(ls) => QueryResult.fromBytes(storage, queryRequest)(ls.toArray, 0)
+//            }
+//          }
+//        }
+//        cache.asMap().put(key, future)
+//      case Failure(ex) =>
+//        logger.error(s"fetch failed.")
+//    }
     queryResultLsFuture.onComplete { queryResultLsTry =>
       if (queryResultLsTry.isSuccess) {
         val key = toCacheKey(queryRequest)
         val queryResultLs = queryResultLsTry.get
         val bytes = QueryResult.toBytes(storage)(queryResultLs)
-        getClient(key).setex(key.toString, toTs(queryRequest), ByteString(bytes))
+
+        getClient(key).setex(key.toString, toTs(queryRequest), ByteString(bytes)) onComplete {
+          case Success(ret) =>
+            cache.asMap().remove(key)
+          case Failure(ex) =>
+            logger.error(s"set to redis failed.")
+        }
 //        clients.doBlockWithKey(key.toString) { jedis =>
 //          jedis.setex(getBytes(key), toTs(queryRequest), bytes)
 //        }
