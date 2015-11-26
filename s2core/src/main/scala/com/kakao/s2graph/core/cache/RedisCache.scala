@@ -53,7 +53,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
     val promise = Promise[Seq[QueryResult]]
     cache.asMap().putIfAbsent(key, promise.future) match {
       case null =>
-        logger.debug(s"[MISS]: FutureCache.")
+//        logger.debug(s"[MISS]: FutureCache.")
         val future = getClient(key).get(key.toString).map { valueOpt =>
           valueOpt match {
             case None => Nil
@@ -65,7 +65,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
             promise.success(value)
             cache.asMap().remove(key)
           case Failure(ex) =>
-            logger.error(s"getIfPresent failed.")
+//            logger.error(s"getIfPresent failed.")
             cache.asMap().remove(key)
 //            cache.asMap().remove(key, promise.future)
         }
@@ -76,7 +76,7 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
 
         future
       case existingFuture =>
-        logger.debug(s"[HIT]: FutureCache.")
+//        logger.debug(s"[HIT]: FutureCache.")
         existingFuture
     }
 
