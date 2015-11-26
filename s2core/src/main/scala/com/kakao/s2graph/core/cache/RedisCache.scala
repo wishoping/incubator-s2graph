@@ -37,7 +37,6 @@ class RedisCache(config: Config, storage: AsynchbaseStorage)(implicit ec: Execut
 
   val maxSize = 10000
   val cache = CacheBuilder.newBuilder()
-  .expireAfterAccess(100, TimeUnit.MILLISECONDS)
   .expireAfterWrite(100, TimeUnit.MILLISECONDS)
   .maximumSize(maxSize).build[java.lang.Long, Future[Seq[QueryResult]]]()
 
