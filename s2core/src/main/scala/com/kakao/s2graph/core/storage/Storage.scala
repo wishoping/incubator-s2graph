@@ -72,8 +72,12 @@ abstract class Storage(implicit ec: ExecutionContext) {
                               queryParam: QueryParam,
                               cacheElementOpt: Option[IndexEdge],
                               parentEdges: Seq[EdgeWithScore]): Option[Edge] = {
-    val indexEdge = indexEdgeDeserializer.fromKeyValues(queryParam, Seq(kv), queryParam.label.schemaVersion, cacheElementOpt)
-    Option(indexEdge.toEdge.copy(parentEdges = parentEdges))
+    try {
+      val indexEdge = indexEdgeDeserializer.fromKeyValues(queryParam, Seq(kv), queryParam.label.schemaVersion, cacheElementOpt)
+      Option(indexEdge.toEdge.copy(parentEdges = parentEdges))
+    } catch {
+      case e: Exception => None
+    }
   }
 
   def toSnapshotEdge[K: CanSKeyValue](kv: K,
