@@ -104,6 +104,17 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
                      parentEdges: Seq[EdgeWithScore]): Deferred[QueryRequestWithResult] = {
 
     def fetchInner: Deferred[QueryRequestWithResult] = {
+      val request = buildRequest(queryRequest)
+      storage.client.get(request) withCallback { kvs =>
+        val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
+        QueryRequestWithResult(queryRequest, QueryResult(edgeWithScores))
+      } recoverWith { ex =>
+        logger.error(s"fetchQueryParam failed. fallback return.", ex)
+        QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
+      }
+    }
+
+    def fetchInnerWithCache: Deferred[QueryRequestWithResult] = {
       val queryParam = queryRequest.queryParam
       val request = buildRequest(queryRequest)
       val cacheKeyBytes = Bytes.add(queryRequest.query.cacheKeyBytes, toCacheKeyBytes(request))
@@ -141,11 +152,13 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
         val cacheKey = queryParam.toCacheKey(toCacheKeyBytes(request))
 
         def setCacheAfterFetch: Deferred[QueryRequestWithResult] =
-          fetchInner withCallback { queryResult: QueryRequestWithResult =>
+          fetchInnerWithCache withCallback { queryResult: QueryRequestWithResult =>
             cache.put(cacheKey, Seq(queryResult.queryResult))
             queryResult
           }
-        if (queryParam.cacheTTLInMillis > 0) {
+
+        if (queryParam.cacheTTLInMillis <= 0) fetchInner
+        else {
           val cacheTTL = queryParam.cacheTTLInMillis
           if (cache.asMap().containsKey(cacheKey)) {
             val cachedVal = cache.asMap().get(cacheKey)
@@ -155,8 +168,6 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
               setCacheAfterFetch
           } else
             setCacheAfterFetch
-        } else {
-          fetchInner
         }
     }
   }
