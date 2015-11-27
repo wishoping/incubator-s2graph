@@ -10,7 +10,8 @@ import com.kakao.s2graph.core.utils.{Extensions, logger}
 import com.stumbleupon.async.Deferred
 import org.apache.hadoop.hbase.util.Bytes
 import org.hbase.async.GetRequest
-
+import scala.util.Random
+import scala.collection.mutable.ArrayBuffer
 import scala.collection.JavaConversions._
 import scala.collection.{Map, Seq}
 import scala.concurrent.{ExecutionContext, Future}
@@ -44,7 +45,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
     val (srcVId, tgtVId) = (SourceVertexId(srcColumn.id.get, srcInnerId), TargetVertexId(tgtColumn.id.get, tgtInnerId))
     val (srcV, tgtV) = (Vertex(srcVId), Vertex(tgtVId))
     val currentTs = System.currentTimeMillis()
-    val propsWithTs =  Map(LabelMeta.timeStampSeq -> InnerValLikeWithTs(InnerVal.withLong(currentTs, label.schemaVersion), currentTs)).toMap
+    val propsWithTs = Map(LabelMeta.timeStampSeq -> InnerValLikeWithTs(InnerVal.withLong(currentTs, label.schemaVersion), currentTs)).toMap
     val edge = Edge(srcV, tgtV, labelWithDir, propsWithTs = propsWithTs)
 
     val get = if (tgtVertexIdOpt.isDefined) {
@@ -90,12 +91,26 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
                      prevStepScore: Double,
                      isInnerCall: Boolean,
                      parentEdges: Seq[EdgeWithScore]): Deferred[QueryRequestWithResult] = {
+    def sample(edges: Seq[EdgeWithScore], n: Int): Seq[EdgeWithScore] = {
+      val pureEdges = if (queryRequest.queryParam.offset == 0) {
+        edges.filterNot { case x => x.edge.propsPlusTs.contains(LabelMeta.degreeSeq) }
+      } else edges
+      val sampled = ArrayBuffer[EdgeWithScore]()
+      while (sampled.size < n) {
+        val selectedEdge = pureEdges(Random.nextInt(pureEdges.size))
+        if (!sampled.contains(selectedEdge)) sampled += pureEdges(Random.nextInt(pureEdges.size))
+      }
+      sampled.toSeq
+    }
 
     def fetchInner: Deferred[QueryRequestWithResult] = {
       val request = buildRequest(queryRequest)
       storage.client.get(request) withCallback { kvs =>
         val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
-        QueryRequestWithResult(queryRequest, QueryResult(edgeWithScores))
+        val resultEdgesWithScores = if (queryRequest.queryParam.sample >= 0 ) {
+          sample(edgeWithScores, queryRequest.queryParam.sample)
+        } else edgeWithScores
+        QueryRequestWithResult(queryRequest, QueryResult(resultEdgesWithScores))
       } recoverWith { ex =>
         logger.error(s"fetchQueryParam failed. fallback return.", ex)
         QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
@@ -138,8 +153,8 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
         bytes = Bytes.add(bytes, qualifier)
       }
     }
-//    if (getRequest.family() != null) bytes = Bytes.add(bytes, getRequest.family())
-//    if (getRequest.qualifiers() != null) getRequest.qualifiers().filter(_ != null).foreach(q => bytes = Bytes.add(bytes, q))
+    //    if (getRequest.family() != null) bytes = Bytes.add(bytes, getRequest.family())
+    //    if (getRequest.qualifiers() != null) getRequest.qualifiers().filter(_ != null).foreach(q => bytes = Bytes.add(bytes, q))
     bytes
   }
 
@@ -149,15 +164,15 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
     val defers: Seq[Deferred[QueryRequestWithResult]] = for {
       (queryRequest, prevStepScore) <- queryRequestWithScoreLs
     } yield {
-      val prevStepEdgesOpt = prevStepEdges.get(queryRequest.vertex.id)
-      if (prevStepEdgesOpt.isEmpty) throw new RuntimeException("miss match on prevStepEdge and current GetRequest")
+        val prevStepEdgesOpt = prevStepEdges.get(queryRequest.vertex.id)
+        if (prevStepEdgesOpt.isEmpty) throw new RuntimeException("miss match on prevStepEdge and current GetRequest")
 
-      val parentEdges = for {
-        parentEdge <- prevStepEdgesOpt.get
-      } yield parentEdge
+        val parentEdges = for {
+          parentEdge <- prevStepEdgesOpt.get
+        } yield parentEdge
 
-      fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges)
-    }
+        fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges)
+      }
 
     val grouped: Deferred[util.ArrayList[QueryRequestWithResult]] = Deferred.group(defers)
     grouped withCallback { queryResults: util.ArrayList[QueryRequestWithResult] =>
