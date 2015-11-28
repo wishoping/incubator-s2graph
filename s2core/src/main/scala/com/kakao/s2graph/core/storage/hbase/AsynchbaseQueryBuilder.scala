@@ -137,7 +137,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
         case null => fetchDefer
         case (oldHitCount, existingDefer) =>
           val newHitCount = oldHitCount.incrementAndGet()
-          if (newHitCount > expireCount) cache.asMap().remove(cacheKey)
+//          if (newHitCount > expireCount) cache.asMap().remove(cacheKey)
           existingDefer
       }
 //      fetchDefer
