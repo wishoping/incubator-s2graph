@@ -98,10 +98,17 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       val sampled = ArrayBuffer[EdgeWithScore]()
       while (sampled.size < n) {
         val selectedEdge = pureEdges(Random.nextInt(pureEdges.size))
-        if (!sampled.contains(selectedEdge)) sampled += pureEdges(Random.nextInt(pureEdges.size))
+        if (!sampled.contains(selectedEdge)) sampled += selectedEdge
       }
       sampled.toSeq
     }
+
+    def sample2(edges: Seq[EdgeWithScore], n: Int): Seq[EdgeWithScore] = {
+        val pureEdges = if (queryRequest.queryParam.offset == 0) {
+          edges.filterNot { case x => x.edge.propsPlusTs.contains(LabelMeta.degreeSeq) }
+        } else edges
+        Random.shuffle(pureEdges).take(n)
+      }
 
     def fetchInner: Deferred[QueryRequestWithResult] = {
       val request = buildRequest(queryRequest)
@@ -109,6 +116,8 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
         val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
         val resultEdgesWithScores = if (queryRequest.queryParam.sample >= 0 ) {
           sample(edgeWithScores, queryRequest.queryParam.sample)
+        } else if (queryRequest.queryParam.sample2 >= 0) {
+          sample2(edgeWithScores, queryRequest.queryParam.sample2)
         } else edgeWithScores
         QueryRequestWithResult(queryRequest, QueryResult(resultEdgesWithScores))
       } recoverWith { ex =>
