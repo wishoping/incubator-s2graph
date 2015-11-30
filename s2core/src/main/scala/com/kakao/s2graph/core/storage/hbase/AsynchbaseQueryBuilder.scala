@@ -121,17 +121,33 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       val request = buildRequest(queryRequest)
       val cacheKeyBytes = Bytes.add(queryRequest.query.cacheKeyBytes, toCacheKeyBytes(request))
       val cacheKey = queryParam.toCacheKey(cacheKeyBytes)
-      val promise = new Deferred[QueryRequestWithResult]()
-      val defer = futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), promise)) match {
-        case null =>
-          // no request exist on this key
-          // call hbase and set result value into promise
 
-          fetchInner withCallback { queryRequestWithResult =>
-            promise.callback(queryRequestWithResult)
-            queryRequestWithResult
+      val cacheVal = futureCache.getIfPresent(cacheKey)
+      cacheVal match {
+        case null =>
+          val promise = new Deferred[QueryRequestWithResult]()
+          val defer = futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), promise)) match {
+            case null =>
+              // no request exist on this key
+              // call hbase and set result value into promise
+
+              fetchInner withCallback { queryRequestWithResult =>
+                promise.callback(queryRequestWithResult)
+                queryRequestWithResult
+              }
+              promise
+            case (cachedAt, existingDefer) =>
+              // existing defer should be promise we set above.
+              if (System.currentTimeMillis() < cachedAt + cacheTTL) {
+                // cache data is valid.
+                existingDefer
+              } else {
+                // need to expire cache.
+                futureCache.asMap().remove(cacheKey)
+                existingDefer
+              }
           }
-          promise
+          defer
         case (cachedAt, existingDefer) =>
           // existing defer should be promise we set above.
           if (System.currentTimeMillis() < cachedAt + cacheTTL) {
@@ -143,7 +159,6 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
             existingDefer
           }
       }
-      defer
     }
   }
 
