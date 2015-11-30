@@ -151,11 +151,14 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
         val request = buildRequest(queryRequest)
         val cacheKey = queryParam.toCacheKey(toCacheKeyBytes(request))
 
-        def setCacheAfterFetch: Deferred[QueryRequestWithResult] =
+        def setCacheAfterFetch: Deferred[QueryRequestWithResult] = {
+          /** remove from future cache table. */
+          cache.asMap().remove(cacheKey)
           fetchInnerWithCache withCallback { queryResult: QueryRequestWithResult =>
             cache.put(cacheKey, Seq(queryResult.queryResult))
             queryResult
           }
+        }
 
         if (queryParam.cacheTTLInMillis <= 0) fetchInner
         else {
