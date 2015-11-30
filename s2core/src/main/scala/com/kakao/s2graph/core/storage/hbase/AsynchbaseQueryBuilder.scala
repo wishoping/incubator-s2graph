@@ -94,9 +94,9 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
   val expireCount = storage.config.getInt("future.cache.expire.count")
   val expireTTL = storage.config.getInt("future.cache.expire.ttl")
   val futureCache = CacheBuilder.newBuilder()
-  .expireAfterAccess(expireTTL, TimeUnit.MILLISECONDS)
-  .expireAfterWrite(expireTTL, TimeUnit.MILLISECONDS)
-  .maximumSize(maxSize).build[java.lang.Long, (Long, Deferred[QueryRequestWithResult])]()
+  .expireAfterAccess(10000, TimeUnit.MILLISECONDS)
+  .expireAfterWrite(10000, TimeUnit.MILLISECONDS)
+  .maximumSize(10000).build[java.lang.Long, (Long, Deferred[QueryRequestWithResult])]()
 
   override def fetch(queryRequest: QueryRequest,
                      prevStepScore: Double,
@@ -104,6 +104,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
                      parentEdges: Seq[EdgeWithScore]): Deferred[QueryRequestWithResult] = {
 
     def fetchInner = {
+      logger.error(s"!!!!!")
       val request = buildRequest(queryRequest)
       storage.client.get(request) withCallback { kvs =>
         val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
@@ -122,44 +123,59 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       val cacheKeyBytes = Bytes.add(queryRequest.query.cacheKeyBytes, toCacheKeyBytes(request))
       val cacheKey = queryParam.toCacheKey(cacheKeyBytes)
 
+//      logger.debug(s"[CacheKey]: $cacheKey, ${futureCache.asMap().keySet()}")
       val cacheVal = futureCache.getIfPresent(cacheKey)
       cacheVal match {
         case null =>
+//          logger.debug(s"[CacheVal]: $cacheVal")
           val promise = new Deferred[QueryRequestWithResult]()
-          val defer = futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), promise)) match {
-            case null =>
-              // no request exist on this key
-              // call hbase and set result value into promise
-
-              fetchInner withCallback { queryRequestWithResult =>
-                promise.callback(queryRequestWithResult)
-                queryRequestWithResult
-              }
-              promise
-            case (cachedAt, existingDefer) =>
-              // existing defer should be promise we set above.
-              if (System.currentTimeMillis() < cachedAt + cacheTTL) {
-                // cache data is valid.
-                existingDefer
-              } else {
-                // need to expire cache.
-                logger.info(s"Expire future cache. ${System.currentTimeMillis()} >= ${cachedAt + cacheTTL}")
-                futureCache.asMap().remove(cacheKey)
-                existingDefer
-              }
+          futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), promise))
+          fetchInner withCallback { queryRequestWithResult =>
+            promise.callback(queryRequestWithResult)
+            queryRequestWithResult
           }
+//          logger.debug(s"[CacheKey]: $cacheKey, ${futureCache.asMap().keySet()}")
+          val (cachedAt, defer) = futureCache.getIfPresent(cacheKey)
+          if (System.currentTimeMillis() >= cachedAt + cacheTTL) futureCache.asMap().remove(cacheKey)
           defer
-        case (cachedAt, existingDefer) =>
-          // existing defer should be promise we set above.
-          if (System.currentTimeMillis() < cachedAt + cacheTTL) {
-            // cache data is valid.
-            existingDefer
-          } else {
-            // need to expire cache.
-            logger.info(s"Expire future cache. ${System.currentTimeMillis()} >= ${cachedAt + cacheTTL}")
-            futureCache.asMap().remove(cacheKey)
-            existingDefer
-          }
+//          val defer = futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), promise)) match {
+//            case null =>
+//              logger.info(s"[NewFuture]")
+//              // no request exist on this key
+//              // call hbase and set result value into promise
+//
+//              fetchInner withCallback { queryRequestWithResult =>
+//                promise.callback(queryRequestWithResult)
+//                queryRequestWithResult
+//              }
+//              promise
+//            case (cachedAt, existingDefer) =>
+//              logger.info(s"[ExistingFuture]")
+//              // existing defer should be promise we set above.
+//              if (System.currentTimeMillis() < cachedAt + cacheTTL) {
+//                // cache data is valid.
+//                existingDefer
+//              } else {
+//                // need to expire cache.
+//                logger.info(s"Expire future cache. ${System.currentTimeMillis()} >= ${cachedAt + cacheTTL}")
+//                futureCache.asMap().remove(cacheKey)
+//                existingDefer
+//              }
+//          }
+//          defer
+        case (cachedAt, defer) =>
+          if (System.currentTimeMillis() >= cachedAt + cacheTTL) futureCache.asMap().remove(cacheKey)
+          defer
+//          // existing defer should be promise we set above.
+//          if (System.currentTimeMillis() < cachedAt + cacheTTL) {
+//            // cache data is valid.
+//            existingDefer
+//          } else {
+//            // need to expire cache.
+//            logger.info(s"Expire future cache. ${System.currentTimeMillis()} >= ${cachedAt + cacheTTL}")
+//            futureCache.asMap().remove(cacheKey)
+//            existingDefer
+//          }
       }
     }
   }
