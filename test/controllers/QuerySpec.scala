@@ -217,6 +217,24 @@ class QuerySpec extends SpecCommon with PlaySpecification {
       )
     }
 
+    def queryGlobalLimit(id: Int, limit: Int): JsValue = {
+      Json.obj(
+        "limit" -> limit,
+        "srcVertices" -> Json.arr(
+          Json.obj("serviceName" -> testServiceName, "columnName" -> testColumnName, "id" -> id)
+        ),
+        "steps" -> Json.arr(
+          Json.obj(
+            "step" -> Json.arr(
+              Json.obj(
+                "label" -> testLabelName
+              )
+            )
+          )
+        )
+      )
+    }
+
     def getEdges(queryJson: JsValue): JsValue = {
       val ret = route(FakeRequest(POST, "/graphs/getEdges").withJsonBody(queryJson)).get
       contentAsJson(ret)
@@ -479,6 +497,30 @@ class QuerySpec extends SpecCommon with PlaySpecification {
         edgesTo must_== orderByTo
         ascOrderByTo must_== Seq(JsNumber(1), JsNumber(2))
         edgesTo.reverse must_== ascOrderByTo
+      }
+    }
+
+    "limit" >> {
+      running(FakeApplication()) {
+        // insert test set
+        val bulkEdges: String = Seq(
+          edge"1001 insert e 0 1 $testLabelName"($(weight = 10, is_hidden = true)),
+          edge"2002 insert e 0 2 $testLabelName"($(weight = 20, is_hidden = false)),
+          edge"3003 insert e 2 0 $testLabelName"($(weight = 30)),
+          edge"4004 insert e 2 1 $testLabelName"($(weight = 40))
+        ).mkString("\n")
+        contentAsJson(EdgeController.mutateAndPublish(bulkEdges, withWait = true))
+
+        val edges = getEdges(querySingle(0, limit=1))
+        val limitEdges = getEdges(queryGlobalLimit(0, 2))
+
+        println(edges)
+        println(limitEdges)
+
+        val edgesTo = edges \ "results" \\ "to"
+        val limitEdgesTo = limitEdges \ "results" \\ "to"
+
+        edgesTo must_== limitEdgesTo
       }
     }
   }
