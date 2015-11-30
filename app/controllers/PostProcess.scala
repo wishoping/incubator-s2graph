@@ -3,8 +3,6 @@ package controllers
 import com.kakao.s2graph.core._
 import com.kakao.s2graph.core.mysqls._
 import com.kakao.s2graph.core.types.{InnerVal, InnerValLike}
-import com.kakao.s2graph.core.utils.logger
-import org.slf4j.LoggerFactory
 import play.api.libs.json.{Json, _}
 
 import scala.collection.mutable.ListBuffer
@@ -133,7 +131,6 @@ object PostProcess extends JSONParser {
                       orderByColumns: Seq[(String, Boolean)],
                       rawEdges: ListBuffer[(Map[String, JsValue], Double, (Any, Any, Any, Any))])
   : ListBuffer[(Map[String, JsValue], Double, (Any, Any, Any, Any))] = {
-    import com.kakao.s2graph.core.OrderingUtil._
 
     if (q.withScore && orderByColumns.nonEmpty) {
       val ascendingLs = orderByColumns.map(_._2)
@@ -269,27 +266,42 @@ object PostProcess extends JSONParser {
           } yield {
             val scoreSum = groupedRawEdges.map(x => x._2).sum
             // ordering
-            val orderedEdges = orderBy(query, orderByColumns, groupedRawEdges).map(_._1)
-            val edges = query.limitOpt match {
-              case Some(limit) => orderedEdges.take(limit)
-              case None => orderedEdges
-            }
+            val edges = orderBy(query, orderByColumns, groupedRawEdges).map(_._1)
 
-            Json.obj(
-              "groupBy" -> Json.toJson(groupByKeyVals.toMap),
-              "scoreSum" -> scoreSum,
-              "agg" -> edges
-            )
+//            Json.obj(
+//              "groupBy" -> Json.toJson(groupByKeyVals.toMap),
+//              "scoreSum" -> scoreSum,
+//              "agg" -> edges
+//            )
+            (groupByKeyVals, scoreSum, edges)
           }
         }
+        val sortedGroupedEdges = groupedEdges.toList.sortBy(_._2)(Ordering.Double.reverse)
 
-        val groupedSortedJsons = groupedEdges.toList.sortBy { jsVal => -1 * (jsVal \ "scoreSum").as[Double] }
-        Json.obj(
-          "size" -> groupedEdges.size,
-          "degrees" -> degrees,
-          "results" -> groupedSortedJsons,
-          "impressionId" -> query.impressionId()
-        )
+        def toJson(groupByKeyVals: Seq[(String, JsValue)], scoreSum: Double, edges: ListBuffer[Map[String, JsValue]]): JsValue = {
+          Json.obj(
+            "groupBy" -> Json.toJson(groupByKeyVals.toMap),
+            "scoreSum" -> scoreSum,
+            "agg" -> edges
+          )
+        }
+
+        query.limitOpt match {
+          case Some(limit) =>
+            val limitedSortedGroupedEdges = sortedGroupedEdges.take(limit)
+            Json.obj(
+              "size" -> limitedSortedGroupedEdges.length,
+              "results" -> limitedSortedGroupedEdges.map((toJson _).tupled),
+              "impressionId" -> query.impressionId()
+            )
+          case None =>
+            Json.obj(
+              "size" -> groupedEdges.size,
+              "degrees" -> degrees,
+              "results" -> sortedGroupedEdges.map((toJson _).tupled),
+              "impressionId" -> query.impressionId()
+            )
+        }
       }
     }
   }

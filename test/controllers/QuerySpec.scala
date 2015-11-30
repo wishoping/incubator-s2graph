@@ -512,7 +512,7 @@ class QuerySpec extends SpecCommon with PlaySpecification {
         contentAsJson(EdgeController.mutateAndPublish(bulkEdges, withWait = true))
 
         val edges = getEdges(querySingle(0, limit=1))
-        val limitEdges = getEdges(queryGlobalLimit(0, 2))
+        val limitEdges = getEdges(queryGlobalLimit(0, 1))
 
         println(edges)
         println(limitEdges)
