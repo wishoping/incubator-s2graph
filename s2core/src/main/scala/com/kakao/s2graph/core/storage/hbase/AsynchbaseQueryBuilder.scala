@@ -10,6 +10,8 @@ import com.kakao.s2graph.core.utils.{Extensions, logger}
 import com.stumbleupon.async.Deferred
 import org.apache.hadoop.hbase.util.Bytes
 import org.hbase.async.GetRequest
+import scala.annotation.tailrec
+import scala.collection.generic.CanBuildFrom
 import scala.util.Random
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.JavaConversions._
@@ -92,6 +94,46 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
                      isInnerCall: Boolean,
                      parentEdges: Seq[EdgeWithScore]): Deferred[QueryRequestWithResult] = {
 
+
+//    def shuffle[T, CC[X] <: TraversableOnce[X]](xs: CC[T], n: Int)(implicit bf: CanBuildFrom[CC[T], T, CC[T]]): CC[T] = {
+//      val buf = new ArrayBuffer[T] ++= xs
+//      val random = new Random()
+//
+//      def swap(i1: Int, i2: Int) {
+//        val tmp = buf(i1)
+//        buf(i1) = buf(i2)
+//        buf(i2) = tmp
+//      }
+//
+//      for (n <- buf.length to 2 by -1) {
+//        val k = random.nextInt(n)
+//        swap(n - 1, k)
+//      }
+//
+//      (bf(xs) ++= buf).
+//    }
+//
+    @tailrec
+    def randomInt(sampleNumber: Int, range: Int, set: Set[Int] = Set.empty[Int]): Set[Int] = {
+      if (set.size == sampleNumber) set
+      else randomInt(sampleNumber, range, set + Random.nextInt(range))
+    }
+
+    def sample3(edges: Seq[EdgeWithScore], n: Int): Seq[EdgeWithScore] = {
+
+
+      val randoms = randomInt(n, edges.size)
+      var samples = List.empty[EdgeWithScore]
+      var idx = 0
+
+      edges.foreach { e =>
+        if (randoms.contains(idx)) samples = e :: samples
+        idx += 1
+      }
+
+      samples.toSeq
+    }
+
     def sample2(edges: Seq[EdgeWithScore], n: Int): Seq[EdgeWithScore] = {
       val pureEdges = if (queryRequest.queryParam.offset == 0) {
         edges.filterNot { case x => x.edge.propsPlusTs.contains(LabelMeta.degreeSeq) }
@@ -135,6 +177,8 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
           sample(edgeWithScores, queryRequest.queryParam.sample)
         } else if (queryRequest.queryParam.sample2 >= 0) {
           sample2(edgeWithScores, queryRequest.queryParam.sample2)
+        } else if (queryRequest.queryParam.sample3 >= 0) {
+          sample3(edgeWithScores, queryRequest.queryParam.sample3)
         } else edgeWithScores
         QueryRequestWithResult(queryRequest, QueryResult(resultEdgesWithScores))
       } recoverWith { ex =>

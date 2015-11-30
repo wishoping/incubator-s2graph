@@ -233,6 +233,7 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
 
   var sample = -1
   var sample2 = -1
+  var sample3 = -1
   var limit = 10
   var offset = 0
   var rank = new RankParam(labelWithDir.labelId, List(LabelMeta.countSeq -> 1))
@@ -301,6 +302,11 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
 
   def sample2(n: Int): QueryParam = {
     this.sample2 = n
+    this
+  }
+
+  def sample3(n: Int): QueryParam = {
+    this.sample3 = n
     this
   }
 

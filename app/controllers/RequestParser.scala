@@ -294,9 +294,11 @@ trait RequestParser extends JSONParser {
       val scorePropagateOp = (labelGroup \ "scorePropagateOp").asOpt[String].getOrElse("multiply")
       val sample = (labelGroup \ "sample").asOpt[Int].getOrElse(-1)
       val sample2 = (labelGroup \ "sample2").asOpt[Int].getOrElse(-1)
+      val sample3 = (labelGroup \ "sample3").asOpt[Int].getOrElse(-1)
 
       // FIXME: Order of command matter
       QueryParam(labelWithDir)
+        .sample3(sample3)
         .sample2(sample2)
         .sample(sample)
         .limit(offset, limit)
