@@ -91,24 +91,40 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
                      prevStepScore: Double,
                      isInnerCall: Boolean,
                      parentEdges: Seq[EdgeWithScore]): Deferred[QueryRequestWithResult] = {
+
+    def sample2(edges: Seq[EdgeWithScore], n: Int): Seq[EdgeWithScore] = {
+      val pureEdges = if (queryRequest.queryParam.offset == 0) {
+        edges.filterNot { case x => x.edge.propsPlusTs.contains(LabelMeta.degreeSeq) }
+      } else edges
+      Random.shuffle(pureEdges).take(n)
+    }
+
     def sample(edges: Seq[EdgeWithScore], n: Int): Seq[EdgeWithScore] = {
       val pureEdges = if (queryRequest.queryParam.offset == 0) {
         edges.filterNot { case x => x.edge.propsPlusTs.contains(LabelMeta.degreeSeq) }
       } else edges
-      val sampled = ArrayBuffer[EdgeWithScore]()
-      while (sampled.size < n) {
-        val selectedEdge = pureEdges(Random.nextInt(pureEdges.size))
-        if (!sampled.contains(selectedEdge)) sampled += selectedEdge
+      val sampled = new Array[EdgeWithScore](n)
+      val N = pureEdges.size // population
+      var t = 0 // total input records dealt with
+      var m = 0 // number of items selected so far
+
+      while (m < n) {
+        val u = Random.nextDouble()
+        if ( (N - t)*u < n - m) {
+          sampled(m) = pureEdges(t)
+          m += 1
+        }
+        t += 1
       }
+      var i = 0
+      while (m < n) {
+        sampled(m) = pureEdges(i)
+        m += 1
+        i += 1
+      }
+
       sampled.toSeq
     }
-
-    def sample2(edges: Seq[EdgeWithScore], n: Int): Seq[EdgeWithScore] = {
-        val pureEdges = if (queryRequest.queryParam.offset == 0) {
-          edges.filterNot { case x => x.edge.propsPlusTs.contains(LabelMeta.degreeSeq) }
-        } else edges
-        Random.shuffle(pureEdges).take(n)
-      }
 
     def fetchInner: Deferred[QueryRequestWithResult] = {
       val request = buildRequest(queryRequest)

@@ -300,9 +300,9 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
   }
 
   def sample2(n: Int): QueryParam = {
-      this.sample2 = n
-      this
-    }
+    this.sample2 = n
+    this
+  }
 
   def limit(offset: Int, limit: Int): QueryParam = {
     /** since degree info is located on first always */
