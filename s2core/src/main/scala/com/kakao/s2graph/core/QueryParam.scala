@@ -48,7 +48,7 @@ case class Query(vertices: Seq[Vertex] = Seq.empty[Vertex],
     val selectBytes = Bytes.toBytes(selectColumns.toString)
     val groupBytes = Bytes.toBytes(groupByColumns.toString)
     val orderByBytes = Bytes.toBytes(orderByColumns.toString)
-    val filterOutBytes = Bytes.toBytes(filterOutQuery.toString)
+    val filterOutBytes = filterOutQuery.map(_.cacheKeyBytes).getOrElse(Array.empty[Byte])
     val returnTreeBytes = Bytes.toBytes(returnTree)
 
     Seq(selectBytes, groupBytes, orderByBytes, filterOutBytes, returnTreeBytes).foldLeft(Array.empty[Byte])(Bytes.add)
@@ -94,6 +94,8 @@ case class EdgeTransformer(queryParam: QueryParam, jsValue: JsValue) {
     fields <- target
   } yield fields
   val isDefault = fieldsLs.size == 1 && fieldsLs.head.size == 1 && (fieldsLs.head.head == "_to" || fieldsLs.head.head == "to")
+
+  def toHashKeyBytes: Array[Byte] = if (isDefault) Array.empty[Byte] else Bytes.toBytes(jsValue.toString)
 
   def replace(fmt: String,
               values: Seq[InnerValLike],
@@ -288,9 +290,11 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
   }
 
   def toCacheKeyRaw(bytes: Array[Byte]): Array[Byte] = {
-    val transformBytes = Bytes.toBytes(transformer.toString)
+    val transformBytes = transformer.toHashKeyBytes
+    //TODO: change this to binrary format.
     val whereBytes = Bytes.toBytes(where.toString())
-    val durationBytes = Bytes.toBytes(duration.toString)
+    val durationBytes = duration.map { case (min, max) => Bytes.add(Bytes.toBytes(min), Bytes.toBytes(max)) } getOrElse Array.empty[Byte]
+//    Bytes.toBytes(duration.toString)
     val conditionBytes = Bytes.add(transformBytes, whereBytes, durationBytes)
     Bytes.add(Bytes.add(bytes, labelWithDir.bytes, toBytes(labelOrderSeq, offset, limit, isInverted)), rank.toHashKeyBytes(),
       Bytes.add(columnRangeFilterMinBytes, columnRangeFilterMaxBytes, conditionBytes))
