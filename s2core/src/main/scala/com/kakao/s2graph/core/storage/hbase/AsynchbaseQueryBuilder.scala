@@ -93,7 +93,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
   val maxSize = storage.config.getInt("future.cache.max.size")
   val expireCount = storage.config.getInt("future.cache.expire.count")
   val expireTTL = storage.config.getInt("future.cache.expire.ttl")
-  val cache = CacheBuilder.newBuilder()
+  val futureCache = CacheBuilder.newBuilder()
   .expireAfterAccess(expireTTL, TimeUnit.MILLISECONDS)
   .expireAfterWrite(expireTTL, TimeUnit.MILLISECONDS)
   .maximumSize(maxSize).build[java.lang.Integer, (AtomicInteger, Deferred[QueryRequestWithResult])]()
@@ -133,7 +133,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
         QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
       }
 
-      cache.asMap().putIfAbsent(cacheKey, (new AtomicInteger(0), d)) match {
+      futureCache.asMap().putIfAbsent(cacheKey, (new AtomicInteger(0), d)) match {
         case null => fetchDefer
         case (oldHitCount, existingDefer) =>
           val newHitCount = oldHitCount.incrementAndGet()
@@ -153,7 +153,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
 
         def setCacheAfterFetch: Deferred[QueryRequestWithResult] = {
           /** remove from future cache table. */
-          cache.asMap().remove(cacheKey)
+          futureCache.asMap().remove(cacheKey)
           fetchInnerWithCache withCallback { queryResult: QueryRequestWithResult =>
             cache.put(cacheKey, Seq(queryResult.queryResult))
             queryResult
