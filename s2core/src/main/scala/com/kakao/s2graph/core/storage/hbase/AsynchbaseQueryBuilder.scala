@@ -143,6 +143,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
                 existingDefer
               } else {
                 // need to expire cache.
+                logger.info(s"Expire future cache. ${System.currentTimeMillis()} >= ${cachedAt + cacheTTL}")
                 futureCache.asMap().remove(cacheKey)
                 existingDefer
               }
@@ -155,6 +156,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
             existingDefer
           } else {
             // need to expire cache.
+            logger.info(s"Expire future cache. ${System.currentTimeMillis()} >= ${cachedAt + cacheTTL}")
             futureCache.asMap().remove(cacheKey)
             existingDefer
           }
