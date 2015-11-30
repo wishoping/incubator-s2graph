@@ -1,5 +1,6 @@
 package com.kakao.s2graph.core
 
+import com.google.common.hash.Hashing
 import com.kakao.s2graph.core.mysqls._
 import com.kakao.s2graph.core.parsers.{Where, WhereParser}
 import com.kakao.s2graph.core.storage.hbase.AsynchbaseQueryBuilder
@@ -175,9 +176,10 @@ case class Step(queryParams: List[QueryParam],
   lazy val includes = queryParams.filterNot(_.exclude)
   lazy val excludeIds = excludes.map(x => x.labelWithDir.labelId -> true).toMap
 
-  def toCacheKey(lss: Seq[Int]): Int = MurmurHash3.bytesHash(toCacheKeyRaw(lss))
+  def toCacheKey(lss: Seq[Long]): Long = Hashing.murmur3_128().hashBytes(toCacheKeyRaw(lss)).asLong()
+//    MurmurHash3.bytesHash(toCacheKeyRaw(lss))
 
-  def toCacheKeyRaw(lss: Seq[Int]): Array[Byte] = {
+  def toCacheKeyRaw(lss: Seq[Long]): Array[Byte] = {
     var bytes = Array.empty[Byte]
     lss.sorted.foreach { h => bytes = Bytes.add(bytes, Bytes.toBytes(h)) }
     bytes
@@ -284,9 +286,10 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
    * @param bytes
    * @return
    */
-  def toCacheKey(bytes: Array[Byte]): Int = {
+  def toCacheKey(bytes: Array[Byte]): Long = {
     val hashBytes = toCacheKeyRaw(bytes)
-    MurmurHash3.bytesHash(hashBytes)
+    Hashing.murmur3_128().hashBytes(hashBytes).asLong()
+//    MurmurHash3.bytesHash(hashBytes)
   }
 
   def toCacheKeyRaw(bytes: Array[Byte]): Array[Byte] = {
