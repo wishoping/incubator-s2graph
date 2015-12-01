@@ -134,7 +134,7 @@ object PostProcess extends JSONParser {
 
     if (q.withScore && orderByColumns.nonEmpty) {
       val ascendingLs = orderByColumns.map(_._2)
-      rawEdges.sortBy(_._3)(new TupleMultiOrdering[Any](ascendingLs))
+      rawEdges.sortBy(_._3)(new TupleMultiOrdering[Any](ascendingLs)(OrderingUtil.MultiValueOrdering))
     } else {
       rawEdges
     }
