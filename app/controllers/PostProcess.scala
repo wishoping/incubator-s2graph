@@ -131,10 +131,11 @@ object PostProcess extends JSONParser {
                       orderByColumns: Seq[(String, Boolean)],
                       rawEdges: ListBuffer[(Map[String, JsValue], Double, (Any, Any, Any, Any))])
   : ListBuffer[(Map[String, JsValue], Double, (Any, Any, Any, Any))] = {
+    import OrderingUtil._
 
     if (q.withScore && orderByColumns.nonEmpty) {
       val ascendingLs = orderByColumns.map(_._2)
-      rawEdges.sortBy(_._3)(new TupleMultiOrdering[Any](ascendingLs)(OrderingUtil.MultiValueOrdering))
+      rawEdges.sortBy(_._3)(TupleMultiOrdering[Any](ascendingLs))
     } else {
       rawEdges
     }
