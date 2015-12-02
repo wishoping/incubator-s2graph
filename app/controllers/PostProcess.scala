@@ -4,6 +4,7 @@ import com.kakao.s2graph.core._
 import com.kakao.s2graph.core.mysqls._
 import com.kakao.s2graph.core.types.{InnerVal, InnerValLike}
 import play.api.libs.json.{Json, _}
+import com.kakao.s2graph.core.OrderingUtil._
 
 import scala.collection.mutable.ListBuffer
 
@@ -131,8 +132,6 @@ object PostProcess extends JSONParser {
                       orderByColumns: Seq[(String, Boolean)],
                       rawEdges: ListBuffer[(Map[String, JsValue], Double, (Any, Any, Any, Any))])
   : ListBuffer[(Map[String, JsValue], Double, (Any, Any, Any, Any))] = {
-    import com.kakao.s2graph.core.OrderingUtil._
-
     if (q.withScore && orderByColumns.nonEmpty) {
       val ascendingLs = orderByColumns.map(_._2)
       rawEdges.sortBy(_._3)(new TupleMultiOrdering[Any](ascendingLs))
@@ -250,24 +249,43 @@ object PostProcess extends JSONParser {
           } yield column -> value
         }
 
-        val groupedEdges = {
+        // ordering by scoreSum and groupByKeyValues
+        val groupedSortedJsons = {
           for {
             (groupByKeyVals, groupedRawEdges) <- grouped
           } yield {
             val scoreSum = groupedRawEdges.map(x => x._2).sum
-            // ordering
             val edges = orderBy(query, orderByColumns, groupedRawEdges).map(_._1)
-            Json.obj(
-              "groupBy" -> Json.toJson(groupByKeyVals.toMap),
-              "scoreSum" -> scoreSum,
-              "agg" -> edges
-            )
+            // sort key, scoreSum, groupByKeyVals, edges
+            val sortKey = (scoreSum, groupByKeyVals.head._2)
+            (sortKey, scoreSum, groupByKeyVals, edges)
           }
+        }.toList.sortBy(_._1)(Ordering.Tuple2[Double, JsValue].reverse).map { case (_, scoreSum, groupByKeyVals, edges) =>
+          Json.obj(
+            "groupBy" -> Json.toJson(groupByKeyVals.toMap),
+            "scoreSum" -> scoreSum,
+            "agg" -> edges
+          )
         }
 
-        val groupedSortedJsons = groupedEdges.toList.sortBy { jsVal => -1 * (jsVal \ "scoreSum").as[Double] }
+//        val groupedEdges = {
+//          for {
+//            (groupByKeyVals, groupedRawEdges) <- grouped
+//          } yield {
+//            val scoreSum = groupedRawEdges.map(x => x._2).sum
+//            // ordering
+//            val edges = orderBy(query, orderByColumns, groupedRawEdges).map(_._1)
+//            Json.obj(
+//              "groupBy" -> Json.toJson(groupByKeyVals.toMap),
+//              "scoreSum" -> scoreSum,
+//              "agg" -> edges
+//            )
+//          }
+//        }
+//
+//        val groupedSortedJsons = groupedEdges.toList.sortBy { jsVal => -1 * (jsVal \ "scoreSum").as[Double] }
         Json.obj(
-          "size" -> groupedEdges.size,
+          "size" -> groupedSortedJsons.size,
           "degrees" -> degrees,
           "results" -> groupedSortedJsons,
           "impressionId" -> query.impressionId()
