@@ -145,6 +145,9 @@ object TransferToHFile extends SparkApp with JSONParser {
     hbaseConf.set(TableOutputFormat.OUTPUT_TABLE, tableName)
     hbaseConf.set("hadoop.tmp.dir", s"/tmp/$tableName")
 
+    Management.createTable(zkQuorum, tableName, List("e", "v"),
+      regionMultiplier = maxHFilePerResionServer,
+      ttl = None, compressionAlgorithm = "lz4")
 
     val rdd = sc.textFile(input)
 

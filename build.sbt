@@ -14,7 +14,8 @@ lazy val commonSettings = Seq(
     "Cloudera" at "https://repository.cloudera.com/artifactory/cloudera-repos",
     "Twitter Maven" at "http://maven.twttr.com",
     "sonatype-snapshots" at "https://oss.sonatype.org/content/repositories/snapshots",
-    "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases"
+    "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
+    "spray repo" at "http://repo.spray.io"
   )
 )
 
@@ -36,6 +37,9 @@ lazy val s2counter_loader = project.dependsOn(s2counter_core, spark)
   .settings(commonSettings: _*)
 
 lazy val s2ml = project.settings(commonSettings: _*)
+
+lazy val s2rest = project.dependsOn(s2core)
+  .settings(commonSettings: _*)
 
 libraryDependencies ++= Seq(
   ws,
