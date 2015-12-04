@@ -1,5 +1,7 @@
 import spray.revolver.RevolverPlugin._
 
+enablePlugins(JavaAppPackaging)
+
 name := "s2graph"
 
 lazy val commonSettings = Seq(
