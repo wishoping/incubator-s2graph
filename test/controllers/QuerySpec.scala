@@ -1,8 +1,11 @@
 package controllers
 
+import com.kakao.s2graph.core.utils.logger
 import play.api.libs.json._
 import play.api.test.{FakeApplication, FakeRequest, PlaySpecification}
 import play.api.{Application => PlayApplication}
+
+import scala.util.Random
 
 class QuerySpec extends SpecCommon with PlaySpecification {
 
@@ -156,7 +159,7 @@ class QuerySpec extends SpecCommon with PlaySpecification {
 
     def queryUnion(id: Int, size: Int) = JsArray(List.tabulate(size)(_ => querySingle(id)))
 
-    def queryGroupBy(id: Int, props: Seq[String]): JsValue = {
+    def queryGroupBy(id: Int, props: Seq[String], label: String = testLabelName, duplicate: String = "first"): JsValue = {
       Json.obj(
         "groupBy" -> props,
         "srcVertices" -> Json.arr(
@@ -166,7 +169,9 @@ class QuerySpec extends SpecCommon with PlaySpecification {
           Json.obj(
             "step" -> Json.arr(
               Json.obj(
-                "label" -> testLabelName
+                "limit" -> -1,
+                "duplicate" -> duplicate,
+                "label" -> label
               )
             )
           )
@@ -194,7 +199,7 @@ class QuerySpec extends SpecCommon with PlaySpecification {
           )
         )
       )
-      println(q)
+//      println(q)
       q
     }
 
@@ -308,6 +313,54 @@ class QuerySpec extends SpecCommon with PlaySpecification {
         }
         weights must contain(exactly(30, 40))
         weights must not contain(10)
+      }
+    }
+
+    "groupBy ordering must be not changed" in {
+      running(FakeApplication()) {
+        val bulkEdges: String = Seq(
+          edge"1001 insert e 1000 1 $testLabelNameWeak"($(time = 1001, weight = 10)),
+          edge"1002 insert e 1000 2 $testLabelNameWeak"($(time = 1002, weight = 20)),
+          edge"1003 insert e 1000 3 $testLabelNameWeak"($(time = 1003, weight = 10)),
+          edge"1004 insert e 1000 1 $testLabelNameWeak"($(time = 1004, weight = 20)),
+          edge"1005 insert e 1000 2 $testLabelNameWeak"($(time = 1005, weight = 10)),
+          edge"1006 insert e 1000 3 $testLabelNameWeak"($(time = 1006, weight = 20))
+        ).mkString("\n")
+
+        contentAsJson(EdgeController.mutateAndPublish(bulkEdges, withWait = true)).as[Seq[Boolean]] foreach { ret =>
+          ret must_== true
+        }
+        val edges = getEdges(queryGroupBy(1000, Seq("to"), testLabelNameWeak, "raw"))
+        logger.debug(s"$edges")
+        val result = (edges \\ "groupBy").head
+
+        (0 until 10) foreach { i =>
+          val start = 5000 + 100 * i
+          (0 until 10) foreach { j =>
+            val ids = Random.shuffle(Seq("0", "1", "2", "3"))
+            val it = ids.iterator
+
+            val ts = start + j * 10
+            val bulkEdges = Random.shuffle((0 until 4).toList).map { t =>
+              edge"${ts + t} insert e 1000 ${it.next()} $testLabelNameWeak"($(time = ts + t, weight = 10))
+            }.mkString("\n")
+//            val bulkEdges: String = Seq(
+//              edge"${j + 3} insert e 1000 1 $testLabelNameWeak"($(time = j + 3, weight = 10)),
+//              edge"${j + 2} insert e 1000 2 $testLabelNameWeak"($(time = j + 2, weight = 10)),
+//              edge"${j + 1} insert e 1000 3 $testLabelNameWeak"($(time = j + 1, weight = 20)),
+//              edge"$j insert e 1000 0 $testLabelNameWeak"($(time = j, weight = 0))
+//            ).mkString("\n")
+
+            contentAsJson(EdgeController.mutateAndPublish(bulkEdges, withWait = true)).as[Seq[Boolean]] foreach { ret =>
+              ret must_== true
+            }
+            val edges = getEdges(queryGroupBy(1000, Seq("to"), testLabelNameWeak, "raw"))
+//            logger.error(s"$edges")
+            (edges \\ "groupBy").head must_== result
+          }
+        }
+
+        (edges \\ "groupBy").head must_== result
       }
     }
 
@@ -431,21 +484,21 @@ class QuerySpec extends SpecCommon with PlaySpecification {
         val jsResult = contentAsJson(EdgeController.mutateAndPublish(bulkEdges, withWait = true))
 
         var result = getEdges(querySingle(src, offset = 0, limit = 2))
-        println(result)
+//        println(result)
         var edges = (result \ "results").as[List[JsValue]]
         edges.size must equalTo(2)
         (edges(0) \ "to").as[Long] must beEqualTo(4)
         (edges(1) \ "to").as[Long] must beEqualTo(3)
 
         result = getEdges(querySingle(src, offset = 1, limit = 2))
-        println(result)
+//        println(result)
         edges = (result \ "results").as[List[JsValue]]
         edges.size must equalTo(2)
         (edges(0) \ "to").as[Long] must beEqualTo(3)
         (edges(1) \ "to").as[Long] must beEqualTo(2)
 
         result = getEdges(querySingleWithTo(src, offset = 0, limit = -1, to = 1))
-        println(result)
+//        println(result)
         edges = (result \ "results").as[List[JsValue]]
         edges.size must equalTo(1)
       }
@@ -467,9 +520,9 @@ class QuerySpec extends SpecCommon with PlaySpecification {
         val orderByScore = getEdges(queryOrderBy(0, Map("weight" -> 1), Seq(Map("score" -> "DESC", "timestamp" -> "DESC"))))
         val ascOrderByScore = getEdges(queryOrderBy(0, Map("weight" -> 1), Seq(Map("score" -> "ASC", "timestamp" -> "DESC"))))
 
-        println(edges)
-        println(orderByScore)
-        println(ascOrderByScore)
+//        println(edges)
+//        println(orderByScore)
+//        println(ascOrderByScore)
 
         val edgesTo = edges \ "results" \\ "to"
         val orderByTo = orderByScore \ "results" \\ "to"
