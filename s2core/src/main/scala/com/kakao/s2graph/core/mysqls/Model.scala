@@ -33,6 +33,8 @@ object Model {
       config.getString("db.default.user"),
       config.getString("db.default.password"),
       settings)
+
+    println("===================="* 10 )
   }
 
   def withTx[T](block: DBSession => T): Try[T] = {

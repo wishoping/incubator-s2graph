@@ -1,3 +1,5 @@
+import spray.revolver.RevolverPlugin._
+
 name := "s2graph"
 
 lazy val commonSettings = Seq(
@@ -18,29 +20,32 @@ lazy val commonSettings = Seq(
   )
 )
 
-lazy val root = project.in(file(".")).enablePlugins(PlayScala)
-  .dependsOn(s2core, s2counter_core)
+lazy val root = project.in(file("."))
+  .dependsOn(s2core)
   .settings(commonSettings: _*)
 
 lazy val s2core = project.settings(commonSettings: _*)
 
-lazy val spark = project.settings(commonSettings: _*)
-
-lazy val loader = project.dependsOn(s2core, spark)
-  .settings(commonSettings: _*)
-
-lazy val s2counter_core = project.dependsOn(s2core)
-  .settings(commonSettings: _*)
-
-lazy val s2counter_loader = project.dependsOn(s2counter_core, spark)
-  .settings(commonSettings: _*)
-
-lazy val s2ml = project.settings(commonSettings: _*)
-
 libraryDependencies ++= Seq(
-  ws,
-  filters,
   "xalan" % "serializer" % "2.7.2", // Download in Intelli J(Download Source/Document)
   "com.github.danielwegener" % "logback-kafka-appender" % "0.0.3",
   "org.json4s" %% "json4s-native" % "3.2.11" % Test
 )
+
+libraryDependencies ++= {
+  val akkaV       = "2.3.12"
+  val akkaStreamV = "1.0"
+  val scalaTestV  = "2.2.5"
+
+  Seq(
+    "com.typesafe.akka" %% "akka-actor"                           % akkaV,
+    "com.typesafe.akka" %% "akka-stream-experimental"             % akkaStreamV,
+    "com.typesafe.akka" %% "akka-http-core-experimental"          % akkaStreamV,
+    "com.typesafe.akka" %% "akka-http-experimental"               % akkaStreamV,
+    "com.typesafe.akka" %% "akka-http-spray-json-experimental"    % akkaStreamV,
+    "com.typesafe.akka" %% "akka-http-testkit-experimental"       % akkaStreamV,
+    "org.scalatest"     %% "scalatest"                            % scalaTestV % "test"
+  )
+}
+
+Revolver.settings

@@ -3,8 +3,11 @@ name := """s2core"""
 scalacOptions ++= Seq("-deprecation")
 
 libraryDependencies ++= Seq(
-  ws,
-  filters,
+  "com.typesafe" % "config" % "1.2.1",
+  "com.typesafe.play" %% "play-json" % Common.playVersion,
+  "com.typesafe.play" %% "play-ws" % Common.playVersion,
+  "com.typesafe.akka" %% "akka-actor" % "2.3.12",
+  "ch.qos.logback" % "logback-classic" % "1.1.2",
   "org.apache.hbase" % "hbase-client" % Common.hbaseVersion excludeAll ExclusionRule(organization = "org.slf4j"),
   "org.apache.hbase" % "hbase-common" % Common.hbaseVersion excludeAll ExclusionRule(organization = "org.slf4j"),
   "org.apache.hbase" % "hbase-server" % Common.hbaseVersion excludeAll(ExclusionRule(organization = "org.slf4j"), ExclusionRule(organization = "com.google.protobuf")),
@@ -27,4 +30,3 @@ libraryDependencies := {
       libraryDependencies.value
   }
 }
-
