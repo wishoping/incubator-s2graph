@@ -40,6 +40,7 @@ libraryDependencies ++= {
   val scalaTestV  = "2.2.5"
 
   Seq(
+    "com.twitter" %% "finagle-http" % "6.31.0",
     "com.typesafe.akka" %% "akka-actor"                           % akkaV,
     "com.typesafe.akka" %% "akka-stream-experimental"             % akkaStreamV,
     "com.typesafe.akka" %% "akka-http-core-experimental"          % akkaStreamV,

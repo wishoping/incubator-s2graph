@@ -1,22 +1,23 @@
 import java.util.concurrent.Executors
 
-import akka.actor.ActorSystem
-import akka.event.{Logging, LoggingAdapter}
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.{ContentType, HttpEntity, HttpResponse, MediaTypes}
-import akka.http.scaladsl.server.Directives._
-import akka.stream.{ActorMaterializer, Materializer}
+//import akka.actor.ActorSystem
+//import akka.event.{Logging, LoggingAdapter}
+//import akka.http.scaladsl.model.{ContentType, HttpEntity, HttpResponse, MediaTypes}
+//import akka.http.scaladsl.server.Directives._
+//import akka.stream.{ActorMaterializer, Materializer}
 import com.kakao.s2graph.core.GraphExceptions.{BadQueryException, ModelNotFoundException}
 import com.kakao.s2graph.core._
+
+//import com.kakao.s2graph.core.OrderingUtil._
+import com.kakao.s2graph.core.OrderingUtil._
 import com.kakao.s2graph.core.mysqls._
 import com.kakao.s2graph.core.parsers.WhereParser
 import com.kakao.s2graph.core.types._
-import com.kakao.s2graph.core.OrderingUtil._
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.ConfigFactory
 import play.api.libs.json._
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import scala.concurrent.ExecutionContext
 import scala.util._
 
 trait RequestParser extends JSONParser {
@@ -891,73 +892,131 @@ object PostProcess extends JSONParser {
   }
 }
 
-trait Service extends RequestParser {
-  implicit val system: ActorSystem
+//trait Service extends RequestParser {
+////  implicit val system: ActorSystem
+////
+////  implicit def executor: ExecutionContextExecutor
+////
+////  implicit val materializer: Materializer
+//
+//  def config: Config
+//
+//  val numOfThread = Runtime.getRuntime.availableProcessors()
+//  val threadPool = Executors.newFixedThreadPool(numOfThread)
+//  val ec = ExecutionContext.fromExecutor(threadPool)
+//
+//  lazy val s2: Graph = new Graph(config)(ec)
+//
+//  val logger: LoggingAdapter
+//
+//  val routes = {
+//    logRequestResult("akka-http") {
+//      pathPrefix("ping") {
+//        pathEnd {
+//          get {
+//            println("pong")
+//            complete("pong")
+//          }
+//        }
+//      } ~
+//        pathPrefix("graphs") {
+//          pathPrefix("getEdges") {
+//            pathEnd {
+//              post {
+//                entity(as[String]) { payload =>
+//                  val bodyAsJson = Json.parse(payload)
+//                  val query = toQuery(bodyAsJson)
+//                  val fetch = s2.getEdges(query)
+//
+//                  complete {
+//                    fetch.map { queryRequestWithResutLs =>
+//                      val jsValue = PostProcess.toSimpleVertexArrJson(queryRequestWithResutLs, Nil)
+//                      HttpResponse(entity = HttpEntity(ContentType(MediaTypes.`application/json`), jsValue.toString))
+//                    }
+//                  }
+//                }
+//              }
+//            }
+//          }
+//        }
+//    }
+//  }
+//}
 
-  implicit def executor: ExecutionContextExecutor
+object S2Rest extends App with RequestParser {
+  //  override implicit val system = ActorSystem()
+  //  override implicit val executor = system.dispatcher
+  //  override implicit val materializer = ActorMaterializer()
 
-  implicit val materializer: Materializer
+  //  override val config = ConfigFactory.load()
+  //  override val logger = Logging(system, getClass)
 
-  def config: Config
-
+  val config = ConfigFactory.load()
   val numOfThread = Runtime.getRuntime.availableProcessors()
   val threadPool = Executors.newFixedThreadPool(numOfThread)
-  val ec = ExecutionContext.fromExecutor(threadPool)
+  implicit val ec = ExecutionContext.fromExecutor(threadPool)
 
-  lazy val s2: Graph = new Graph(config)(ec)
+  val s2: Graph = new Graph(config)(ec)
 
-  val logger: LoggingAdapter
-
-  val routes = {
-    logRequestResult("akka-http") {
-      pathPrefix("ping") {
-        pathEnd {
-          get {
-            println("pong")
-            complete("pong")
-          }
-        }
-      } ~
-        pathPrefix("graphs") {
-          pathPrefix("getEdges") {
-            pathEnd {
-              post {
-                entity(as[String]) { payload =>
-                  val bodyAsJson = Json.parse(payload)
-                  val query = toQuery(bodyAsJson)
-                  val fetch = s2.getEdges(query)
-                  complete {
-                    fetch.map { queryRequestWithResutLs =>
-                      val jsValue = PostProcess.toSimpleVertexArrJson(queryRequestWithResutLs, Nil)
-                      HttpResponse(entity = HttpEntity(ContentType(MediaTypes.`application/json`), jsValue.toString))
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-    }
-  }
-}
-
-object S2Rest extends App with Service {
-  override implicit val system = ActorSystem()
-  override implicit val executor = system.dispatcher
-  override implicit val materializer = ActorMaterializer()
-
-  override val config = ConfigFactory.load()
-  override val logger = Logging(system, getClass)
-
-  val dummy = s2
   ServiceColumn.findAll()
   Label.findAll()
   LabelMeta.findAll()
   LabelIndex.findAll()
   ColumnMeta.findAll()
 
-  val interface = try config.getString("http.interface") catch { case _ => "0.0.0.0" }
-  val port = try config.getString("http.port") catch { case _ => "9000" }
+  val interface = try config.getString("http.interface") catch {
+    case _: Throwable => "0.0.0.0"
+  }
+  val port = try config.getString("http.port") catch {
+    case _: Throwable => "9000"
+  }
 
-  Http().bindAndHandle(routes, interface, port.toInt)
+  //  Http().bindAndHandle(routes, interface, port.toInt)
+  import com.twitter.finagle._
+  import com.twitter.util._
+
+  val service = new Service[http.Request, http.Response] {
+    def apply(req: http.Request): Future[http.Response] = {
+      val promise = new com.twitter.util.Promise[http.Response]
+      val payload = req.contentString
+      val bodyAsJson = Json.parse(payload)
+      val query = toQuery(bodyAsJson)
+      val fetch = s2.getEdges(query)
+
+      fetch.onComplete {
+        case Success(queryRequestWithResutLs) =>
+          val jsValue = PostProcess.toSimpleVertexArrJson(queryRequestWithResutLs, Nil)
+          val httpRes = {
+            val response = com.twitter.finagle.http.Response(
+              com.twitter.finagle.http.Version.Http11,
+              com.twitter.finagle.http.Status.Ok)
+            response.setContentTypeJson()
+            response.setContentString(jsValue.toString)
+            response
+          }
+          promise.become(Future.value(httpRes))
+      }
+
+      promise
+
+      //    val bodyAsJson = Json.parse(payload)
+      //    val query = toQuery(bodyAsJson)
+      //    val fetch = s2.getEdges(query)
+      //
+      //    complete {
+      //      fetch.map { queryRequestWithResutLs =>
+      //        val jsValue = PostProcess.toSimpleVertexArrJson(queryRequestWithResutLs, Nil)
+      //        HttpResponse(entity = HttpEntity(ContentType(MediaTypes.`application/json`), jsValue.toString))
+      //      }
+      //    }
+
+      //      Future.value {
+      //        println("ok")
+      //        http.Response(req.version, http.Status.Ok)
+      //      }
+    }
+  }
+
+  val server = com.twitter.finagle.Http.serve(s":$port", service)
+  Await.ready(server)
 }
