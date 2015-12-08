@@ -285,19 +285,20 @@ object PostProcess extends JSONParser {
             "agg" -> edges
           )
         }
-        def toJsonWithoutEdges(groupByKeyVals: Seq[(String, JsValue)], scoreSum: Double): JsValue = {
-          Json.obj(
-            "groupBy" -> Json.toJson(groupByKeyVals.toMap),
-            "scoreSum" -> scoreSum
-          )
-        }
+//        def toJsonWithoutEdges(groupByKeyVals: Seq[(String, JsValue)], scoreSum: Double): JsValue = {
+//          Json.obj(
+//            "groupBy" -> Json.toJson(groupByKeyVals.toMap),
+//            "scoreSum" -> scoreSum
+//          )
+//        }
 
         query.limitOpt match {
           case Some(limit) =>
             val limitedSortedGroupedEdges = sortedGroupedEdges.take(limit)
             Json.obj(
               "size" -> limitedSortedGroupedEdges.length,
-              "results" -> limitedSortedGroupedEdges.map(x => toJsonWithoutEdges(x._1, x._2)),
+//              "results" -> limitedSortedGroupedEdges.map(x => toJsonWithoutEdges(x._1, x._2)),
+              "results" -> limitedSortedGroupedEdges.map((toJson _).tupled),
               "impressionId" -> query.impressionId()
             )
           case None =>
