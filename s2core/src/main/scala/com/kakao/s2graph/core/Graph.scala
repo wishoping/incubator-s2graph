@@ -38,7 +38,9 @@ object Graph {
     "max.retry.number" -> java.lang.Integer.valueOf(100),
     "max.back.off" -> java.lang.Integer.valueOf(100),
     "hbase.fail.prob" -> java.lang.Double.valueOf(-0.1),
-    "delete.all.fetch.size" -> java.lang.Integer.valueOf(1000)
+    "delete.all.fetch.size" -> java.lang.Integer.valueOf(1000),
+    "future.cache.max.size" -> java.lang.Integer.valueOf(1000000),
+    "future.cache.max.idle.ttl" -> java.lang.Integer.valueOf(60000)
   )
 
   var DefaultConfig: Config = ConfigFactory.parseMap(DefaultConfigs)
@@ -187,7 +189,7 @@ object Graph {
 
           // store degree value with Array.empty so if degree edge exist, it comes at very first.
           def checkDegree() = queryResult.edgeWithScoreLs.headOption.exists { edgeWithScore =>
-            edgeWithScore.edge.propsWithTs.containsKey(LabelMeta.degreeSeq)
+            edgeWithScore.edge.isDegree
           }
           var isDegree = checkDegree()
 
@@ -312,13 +314,13 @@ object Graph {
 class Graph(_config: Config)(implicit ec: ExecutionContext) {
   val config = _config.withFallback(Graph.DefaultConfig)
   val cacheSize = config.getInt("cache.max.size")
-  val cache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Integer, Seq[QueryResult]]()
+//  val cache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Integer, Seq[QueryResult]]()
   val vertexCache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Integer, Option[Vertex]]()
 
   Model(config)
 
   // TODO: Make storage client by config param
-  val storage: Storage = new AsynchbaseStorage(config, cache, vertexCache)(ec)
+  val storage: Storage = new AsynchbaseStorage(config, vertexCache)(ec)
 
   for {
     entry <- config.entrySet() if Graph.DefaultConfigs.contains(entry.getKey)
