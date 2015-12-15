@@ -18,10 +18,18 @@ import scala.util.Random
 import scala.concurrent.{ExecutionContext, Future}
 
 class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionContext)
-  extends QueryBuilder[GetRequest, Deferred[QueryRequestWithResult]](storage) {
+  extends QueryBuilder[GetRequest, Deferred[util.ArrayList[QueryRequestWithResult]]](storage) {
 
   import Extensions.DeferOps
 
+  val maxSize = storage.config.getInt("future.cache.max.size")
+  val futureCacheTTL = storage.config.getInt("future.cache.max.idle.ttl")
+  val futureCache = CacheBuilder.newBuilder()
+  .initialCapacity(maxSize)
+  .concurrencyLevel(Runtime.getRuntime.availableProcessors())
+  .expireAfterWrite(futureCacheTTL, TimeUnit.MILLISECONDS)
+  .expireAfterAccess(futureCacheTTL, TimeUnit.MILLISECONDS)
+  .maximumSize(maxSize).build[java.lang.Long, (Long, Deferred[util.ArrayList[QueryRequestWithResult]])]()
 
   override def buildRequest(queryRequest: QueryRequest): GetRequest = {
     val srcVertex = queryRequest.vertex
@@ -81,7 +89,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
     get
   }
 
-  override def getEdge(srcVertex: Vertex, tgtVertex: Vertex, queryParam: QueryParam, isInnerCall: Boolean): Deferred[QueryRequestWithResult] = {
+  override def getEdge(srcVertex: Vertex, tgtVertex: Vertex, queryParam: QueryParam, isInnerCall: Boolean): Deferred[util.ArrayList[QueryRequestWithResult]] = {
     //TODO:
     val _queryParam = queryParam.tgtVertexInnerIdOpt(Option(tgtVertex.innerId))
     val q = Query.toQuery(Seq(srcVertex), _queryParam)
@@ -89,19 +97,11 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
     fetch(queryRequest, 1.0, isInnerCall = true, parentEdges = Nil)
   }
 
-  val maxSize = storage.config.getInt("future.cache.max.size")
-  val futureCacheTTL = storage.config.getInt("future.cache.max.idle.ttl")
-  val futureCache = CacheBuilder.newBuilder()
-  .initialCapacity(maxSize)
-  .concurrencyLevel(Runtime.getRuntime.availableProcessors())
-  .expireAfterWrite(futureCacheTTL, TimeUnit.MILLISECONDS)
-  .expireAfterAccess(futureCacheTTL, TimeUnit.MILLISECONDS)
-  .maximumSize(maxSize).build[java.lang.Long, (Long, Deferred[QueryRequestWithResult])]()
 
   override def fetch(queryRequest: QueryRequest,
                      prevStepScore: Double,
                      isInnerCall: Boolean,
-                     parentEdges: Seq[EdgeWithScore]): Deferred[QueryRequestWithResult] = {
+                     parentEdges: Seq[EdgeWithScore]): Deferred[util.ArrayList[QueryRequestWithResult]] = {
     @tailrec
     def randomInt(sampleNumber: Int, range: Int, set: Set[Int] = Set.empty[Int]): Set[Int] = {
       if (set.size == sampleNumber) set
@@ -124,27 +124,31 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       samples.toSeq
     }
 
-    def fetchInner(request: GetRequest) = {
+    def fetchInner(request: GetRequest): Deferred[util.ArrayList[QueryRequestWithResult]] = {
       storage.client.get(request) withCallback { kvs =>
         val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
         val resultEdgesWithScores = if (queryRequest.queryParam.sample >= 0 ) {
           sample(edgeWithScores, queryRequest.queryParam.sample)
         } else edgeWithScores
-        QueryRequestWithResult(queryRequest, QueryResult(resultEdgesWithScores))
+        val result = new util.ArrayList[QueryRequestWithResult]()
+        result.add(QueryRequestWithResult(queryRequest, QueryResult(resultEdgesWithScores)))
+        result
       } recoverWith { ex =>
         logger.error(s"fetchQueryParam failed. fallback return.", ex)
-        QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
+        val fallback = new util.ArrayList[QueryRequestWithResult]()
+        fallback.add(QueryRequestWithResult(queryRequest, QueryResult(isFailure = true)))
+        fallback
       }
     }
     def checkAndExpire(request: GetRequest,
                        cacheKey: Long,
                        cacheTTL: Long,
                        cachedAt: Long,
-                       defer: Deferred[QueryRequestWithResult]): Deferred[QueryRequestWithResult] = {
+                       defer: Deferred[util.ArrayList[QueryRequestWithResult]]): Deferred[util.ArrayList[QueryRequestWithResult]] = {
       if (System.currentTimeMillis() >= cachedAt + cacheTTL) {
         // future is too old. so need to expire and fetch new data from storage.
         futureCache.asMap().remove(cacheKey)
-        val newPromise = new Deferred[QueryRequestWithResult]()
+        val newPromise = new Deferred[util.ArrayList[QueryRequestWithResult]]()
         futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), newPromise)) match {
           case null =>
             // only one thread succeed to come here concurrently
@@ -174,7 +178,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       cacheVal match {
         case null =>
           // here there is no promise set up for this cacheKey so we need to set promise on future cache.
-          val promise = new Deferred[QueryRequestWithResult]()
+          val promise = new Deferred[util.ArrayList[QueryRequestWithResult]]()
           val now = System.currentTimeMillis()
           val (cachedAt, defer) = futureCache.asMap().putIfAbsent(cacheKey, (now, promise)) match {
             case null =>
@@ -214,8 +218,12 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
     val defers: Seq[Deferred[QueryRequestWithResult]] = for {
       (queryRequest, prevStepScore) <- queryRequestWithScoreLs
       parentEdges <- prevStepEdges.get(queryRequest.vertex.id)
-    } yield fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges)
-    
+    } yield {
+        fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges).withCallback { resultLs =>
+          resultLs.head
+        }
+      }
+
     val grouped: Deferred[util.ArrayList[QueryRequestWithResult]] = Deferred.group(defers)
     grouped withCallback {
       queryResults: util.ArrayList[QueryRequestWithResult] =>
