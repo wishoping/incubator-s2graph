@@ -237,12 +237,11 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
                        prevStepEdges: Map[VertexId, Seq[EdgeWithScore]]): Future[Seq[QueryRequestWithResult]] = {
     val defers: Seq[Deferred[QueryRequestWithResult]] = for {
       (queryRequest, prevStepScore) <- queryRequestWithScoreLs
-      parentEdges <- prevStepEdges.get(queryRequest.vertex.id)
+      parentEdges <- prevStepEdges.get(queryRequest.vertex.id).toSeq
     } yield {
-        val newDefer = fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges).withCallback { resultLs =>
+        fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges).withCallback { resultLs =>
           resultLs.head
         }
-        newDefer
       }
 
     val grouped: Deferred[util.ArrayList[QueryRequestWithResult]] = Deferred.group(defers)
