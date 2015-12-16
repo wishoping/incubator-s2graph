@@ -9,6 +9,8 @@ import com.kakao.s2graph.core.storage.QueryBuilder
 import com.kakao.s2graph.core.types._
 import com.kakao.s2graph.core.utils.{Extensions, logger}
 import com.stumbleupon.async.Deferred
+import net.sf.ehcache.config.{PersistenceConfiguration, MemoryUnit, CacheConfiguration}
+import net.sf.ehcache.{Cache, CacheManager, Element}
 import org.apache.hadoop.hbase.util.Bytes
 import org.hbase.async.GetRequest
 import scala.annotation.tailrec
@@ -23,28 +25,13 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
   import Extensions.DeferOps
 
   val maxSize = storage.config.getInt("future.cache.max.size")
+
   val expreAfterWrite = storage.config.getInt("future.cache.expire.after.write")
   val expreAfterAccess = storage.config.getInt("future.cache.expire.after.access")
 
+  val cacheManager = CacheManager.newInstance()
+  val futureCache = cacheManager.getCache("futureCache")
 
-  val futureCache = CacheBuilder.newBuilder()
-  .recordStats()
-  .initialCapacity(maxSize)
-  .concurrencyLevel(Runtime.getRuntime.availableProcessors())
-  .expireAfterWrite(expreAfterWrite, TimeUnit.MILLISECONDS)
-  .expireAfterAccess(expreAfterAccess, TimeUnit.MILLISECONDS)
-  .weakKeys()
-  .maximumSize(maxSize).build[java.lang.Long, (Long, Deferred[QueryRequestWithResult])]()
-
-//  val scheduleTime = 60L * 60
-  val scheduleTime = 60
-  val scheduler = Executors.newScheduledThreadPool(1)
-
-  scheduler.scheduleAtFixedRate(new Runnable(){
-    override def run() = {
-      logger.info(s"[FutureCache]: ${futureCache.stats()}")
-    }
-  }, scheduleTime, scheduleTime, TimeUnit.SECONDS)
 
   override def buildRequest(queryRequest: QueryRequest): GetRequest = {
     val srcVertex = queryRequest.vertex
@@ -139,13 +126,10 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       samples.toSeq
     }
 
-    def fetchInner(request: GetRequest) = {
+    def fetchInner(request: GetRequest): Deferred[QueryRequestWithResult] = {
       storage.client.get(request) withCallback { kvs =>
         val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
-        val resultEdgesWithScores = if (queryRequest.queryParam.sample >= 0 ) {
-          sample(edgeWithScores, queryRequest.queryParam.sample)
-        } else edgeWithScores
-        QueryRequestWithResult(queryRequest, QueryResult(resultEdgesWithScores))
+        QueryRequestWithResult(queryRequest, QueryResult(edgeWithScores))
       } recoverWith { ex =>
         logger.error(s"fetchQueryParam failed. fallback return.", ex)
         QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
@@ -158,9 +142,14 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
                        defer: Deferred[QueryRequestWithResult]): Deferred[QueryRequestWithResult] = {
       if (System.currentTimeMillis() >= cachedAt + cacheTTL) {
         // future is too old. so need to expire and fetch new data from storage.
-        futureCache.invalidate(cacheKey)
+
+        futureCache.remove(cacheKey)
+//        futureCache.asMap().remove(cacheKey)
         val newPromise = new Deferred[QueryRequestWithResult]()
-        futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), newPromise)) match {
+        val newElement = new Element(cacheKey, (System.currentTimeMillis(), newPromise))
+
+//        futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), newPromise)) match {
+        futureCache.putIfAbsent(newElement) match {
           case null =>
             // only one thread succeed to come here concurrently
             // initiate fetch to storage then add callback on complete to finish promise.
@@ -169,7 +158,10 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
               queryRequestWithResult
             }
             newPromise
-          case (cachedAt, oldDefer) => oldDefer
+//          case (cachedAt, oldDefer) => oldDefer
+          case oldElement =>
+            val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[(Long, Deferred[QueryRequestWithResult])]
+            oldDefer
         }
       } else {
         // future is not to old so reuse it.
@@ -185,24 +177,32 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       val cacheKeyBytes = Bytes.add(queryRequest.query.cacheKeyBytes, toCacheKeyBytes(request))
       val cacheKey = queryParam.toCacheKey(cacheKeyBytes)
 
-      val cacheVal = futureCache.getIfPresent(cacheKey)
+//      val cacheVal = futureCache.asMap().get(cacheKey)
+      val cacheVal = futureCache.get(cacheKey)
       cacheVal match {
         case null =>
           // here there is no promise set up for this cacheKey so we need to set promise on future cache.
           val promise = new Deferred[QueryRequestWithResult]()
           val now = System.currentTimeMillis()
-          val (cachedAt, defer) = futureCache.asMap().putIfAbsent(cacheKey, (now, promise)) match {
+          val newElement = new Element(cacheKey, (now, promise))
+//          val (cachedAt, defer) = futureCache.asMap().putIfAbsent(cacheKey, (now, promise)) match {
+          val (cachedAt, defer) = futureCache.putIfAbsent(newElement) match {
             case null =>
               fetchInner(request) withCallback { queryRequestWithResult =>
                 promise.callback(queryRequestWithResult)
                 queryRequestWithResult
               }
               (now, promise)
-            case oldVal => oldVal
+//            case oldVal => oldVal
+            case oldElement =>
+              val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[(Long, Deferred[QueryRequestWithResult])]
+              (cachedAt, oldDefer)
           }
           checkAndExpire(request, cacheKey, cacheTTL, cachedAt, defer)
-        case (cachedAt, defer) =>
-          checkAndExpire(request, cacheKey, cacheTTL, cachedAt, defer)
+//        case (cachedAt, defer) =>
+        case oldElement =>
+          val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[(Long, Deferred[QueryRequestWithResult])]
+          checkAndExpire(request, cacheKey, cacheTTL, cachedAt, oldDefer)
       }
     }
   }
@@ -229,12 +229,13 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
     val defers: Seq[Deferred[QueryRequestWithResult]] = for {
       (queryRequest, prevStepScore) <- queryRequestWithScoreLs
       parentEdges <- prevStepEdges.get(queryRequest.vertex.id)
-    } yield fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges)
-    
+    } yield {
+        fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges)
+      }
+
     val grouped: Deferred[util.ArrayList[QueryRequestWithResult]] = Deferred.group(defers)
-    grouped withCallback {
-      queryResults: util.ArrayList[QueryRequestWithResult] =>
-        queryResults.toIndexedSeq
+    grouped withCallback { queryResults: util.ArrayList[QueryRequestWithResult] =>
+      queryResults.toIndexedSeq
     } toFuture
   }
 }
