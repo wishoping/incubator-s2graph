@@ -33,11 +33,11 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
   .concurrencyLevel(Runtime.getRuntime.availableProcessors())
   .expireAfterWrite(expreAfterWrite, TimeUnit.MILLISECONDS)
   .expireAfterAccess(expreAfterAccess, TimeUnit.MILLISECONDS)
-//  .weakKeys()
+  .weakKeys()
   .maximumSize(maxSize).build[java.lang.Long, (Long, Deferred[QueryRequestWithResult])]()
 
 //  val scheduleTime = 60L * 60
-  val scheduleTime = 10
+  val scheduleTime = 60
   val scheduler = Executors.newScheduledThreadPool(1)
 
   scheduler.scheduleAtFixedRate(new Runnable(){
