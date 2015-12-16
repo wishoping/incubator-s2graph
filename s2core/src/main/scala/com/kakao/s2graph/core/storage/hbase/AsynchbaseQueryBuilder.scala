@@ -193,7 +193,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
           // here there is no promise set up for this cacheKey so we need to set promise on future cache.
           val promise = new Deferred[util.ArrayList[QueryRequestWithResult]]()
           val now = System.currentTimeMillis()
-          val newElement = new Element(now, promise)
+          val newElement = new Element(cacheKey, (now, promise))
 //          val (cachedAt, defer) = futureCache.asMap().putIfAbsent(cacheKey, (now, promise)) match {
           val (cachedAt, defer) = futureCache.putIfAbsent(newElement) match {
             case null =>
