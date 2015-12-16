@@ -9,6 +9,8 @@ import com.kakao.s2graph.core.storage.QueryBuilder
 import com.kakao.s2graph.core.types._
 import com.kakao.s2graph.core.utils.{Extensions, logger}
 import com.stumbleupon.async.Deferred
+import net.sf.ehcache.config.{PersistenceConfiguration, MemoryUnit, CacheConfiguration}
+import net.sf.ehcache.{Cache, CacheManager, Element}
 import org.apache.hadoop.hbase.util.Bytes
 import org.hbase.async.GetRequest
 import scala.annotation.tailrec
@@ -24,12 +26,15 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
 
   val maxSize = storage.config.getInt("future.cache.max.size")
   val futureCacheTTL = storage.config.getInt("future.cache.max.idle.ttl")
-  val futureCache = CacheBuilder.newBuilder()
-  .initialCapacity(maxSize)
-  .concurrencyLevel(Runtime.getRuntime.availableProcessors())
-  .expireAfterWrite(futureCacheTTL, TimeUnit.MILLISECONDS)
-  .expireAfterAccess(futureCacheTTL, TimeUnit.MILLISECONDS)
-  .maximumSize(maxSize).build[java.lang.Long, (Long, Deferred[util.ArrayList[QueryRequestWithResult]])]()
+  val cacheManager = CacheManager.newInstance()
+  val futureCache = cacheManager.getCache("futureCache")
+
+//  val futureCache = CacheBuilder.newBuilder()
+//  .initialCapacity(maxSize)
+//  .concurrencyLevel(Runtime.getRuntime.availableProcessors())
+//  .expireAfterWrite(futureCacheTTL, TimeUnit.MILLISECONDS)
+//  .expireAfterAccess(futureCacheTTL, TimeUnit.MILLISECONDS)
+//  .maximumSize(maxSize).build[java.lang.Long, (Long, Deferred[util.ArrayList[QueryRequestWithResult]])]()
 
   override def buildRequest(queryRequest: QueryRequest): GetRequest = {
     val srcVertex = queryRequest.vertex
@@ -147,9 +152,13 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
                        defer: Deferred[util.ArrayList[QueryRequestWithResult]]): Deferred[util.ArrayList[QueryRequestWithResult]] = {
       if (System.currentTimeMillis() >= cachedAt + cacheTTL) {
         // future is too old. so need to expire and fetch new data from storage.
-        futureCache.asMap().remove(cacheKey)
+        futureCache.remove(cacheKey)
+//        futureCache.asMap().remove(cacheKey)
         val newPromise = new Deferred[util.ArrayList[QueryRequestWithResult]]()
-        futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), newPromise)) match {
+        val newElement = new Element(cacheKey, (System.currentTimeMillis(), newPromise))
+
+//        futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), newPromise)) match {
+        futureCache.putIfAbsent(newElement) match {
           case null =>
             // only one thread succeed to come here concurrently
             // initiate fetch to storage then add callback on complete to finish promise.
@@ -158,7 +167,10 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
               queryRequestWithResult
             }
             newPromise
-          case (cachedAt, oldDefer) => oldDefer
+//          case (cachedAt, oldDefer) => oldDefer
+          case oldElement =>
+            val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[Tuple2[Long, Deferred[util.ArrayList[QueryRequestWithResult]]]]
+            oldDefer
         }
       } else {
         // future is not to old so reuse it.
@@ -174,23 +186,31 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       val cacheKeyBytes = Bytes.add(queryRequest.query.cacheKeyBytes, toCacheKeyBytes(request))
       val cacheKey = queryParam.toCacheKey(cacheKeyBytes)
 
-      val cacheVal = futureCache.asMap().get(cacheKey)
+//      val cacheVal = futureCache.asMap().get(cacheKey)
+      val cacheVal = futureCache.get(cacheKey)
       cacheVal match {
         case null =>
           // here there is no promise set up for this cacheKey so we need to set promise on future cache.
           val promise = new Deferred[util.ArrayList[QueryRequestWithResult]]()
           val now = System.currentTimeMillis()
-          val (cachedAt, defer) = futureCache.asMap().putIfAbsent(cacheKey, (now, promise)) match {
+          val newElement = new Element(now, promise)
+//          val (cachedAt, defer) = futureCache.asMap().putIfAbsent(cacheKey, (now, promise)) match {
+          val (cachedAt, defer) = futureCache.putIfAbsent(newElement) match {
             case null =>
               fetchInner(request) withCallback { queryRequestWithResult =>
                 promise.callback(queryRequestWithResult)
                 queryRequestWithResult
               }
               (now, promise)
-            case oldVal => oldVal
+//            case oldVal => oldVal
+            case oldElement =>
+              val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[Tuple2[Long, Deferred[util.ArrayList[QueryRequestWithResult]]]]
+              (cachedAt, oldDefer)
           }
           checkAndExpire(request, cacheKey, cacheTTL, cachedAt, defer)
-        case (cachedAt, defer) =>
+//        case (cachedAt, defer) =>
+        case oldElement =>
+          val (cachedAt, defer) = oldElement.getObjectValue.asInstanceOf[Tuple2[Long, Deferred[util.ArrayList[QueryRequestWithResult]]]]
           checkAndExpire(request, cacheKey, cacheTTL, cachedAt, defer)
       }
     }

@@ -1,0 +1,10 @@
+<ehcache xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="ehcache.xsd" updateCheck="true"
+         monitoring="autodetect" dynamicConfig="true" maxBytesLocalHeap="40%">
+    <cache name="futureCache" timeToIdleSeconds="5" timeToLiveSeconds="10"
+           memoryStoreEvictionPolicy="LFU"
+           transactionalMode="off">
+        <persistence strategy="none"/>
+    </cache>
+
+</ehcache>
