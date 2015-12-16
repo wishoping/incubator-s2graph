@@ -20,7 +20,7 @@ import scala.util.Random
 import scala.concurrent.{ExecutionContext, Future}
 
 class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionContext)
-  extends QueryBuilder[GetRequest, Deferred[util.ArrayList[QueryRequestWithResult]]](storage) {
+  extends QueryBuilder[GetRequest, Deferred[QueryRequestWithResult]](storage) {
 
   import Extensions.DeferOps
 
@@ -94,7 +94,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
     get
   }
 
-  override def getEdge(srcVertex: Vertex, tgtVertex: Vertex, queryParam: QueryParam, isInnerCall: Boolean): Deferred[util.ArrayList[QueryRequestWithResult]] = {
+  override def getEdge(srcVertex: Vertex, tgtVertex: Vertex, queryParam: QueryParam, isInnerCall: Boolean): Deferred[QueryRequestWithResult] = {
     //TODO:
     val _queryParam = queryParam.tgtVertexInnerIdOpt(Option(tgtVertex.innerId))
     val q = Query.toQuery(Seq(srcVertex), _queryParam)
@@ -106,7 +106,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
   override def fetch(queryRequest: QueryRequest,
                      prevStepScore: Double,
                      isInnerCall: Boolean,
-                     parentEdges: Seq[EdgeWithScore]): Deferred[util.ArrayList[QueryRequestWithResult]] = {
+                     parentEdges: Seq[EdgeWithScore]): Deferred[QueryRequestWithResult] = {
     @tailrec
     def randomInt(sampleNumber: Int, range: Int, set: Set[Int] = Set.empty[Int]): Set[Int] = {
       if (set.size == sampleNumber) set
@@ -129,32 +129,25 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       samples.toSeq
     }
 
-    def fetchInner(request: GetRequest): Deferred[util.ArrayList[QueryRequestWithResult]] = {
+    def fetchInner(request: GetRequest): Deferred[QueryRequestWithResult] = {
       storage.client.get(request) withCallback { kvs =>
         val edgeWithScores = storage.toEdges(kvs.toSeq, queryRequest.queryParam, prevStepScore, isInnerCall, parentEdges)
-        val resultEdgesWithScores = if (queryRequest.queryParam.sample >= 0 ) {
-          sample(edgeWithScores, queryRequest.queryParam.sample)
-        } else edgeWithScores
-        val result = new util.ArrayList[QueryRequestWithResult]()
-        result.add(QueryRequestWithResult(queryRequest, QueryResult(resultEdgesWithScores)))
-        result
+        QueryRequestWithResult(queryRequest, QueryResult(edgeWithScores))
       } recoverWith { ex =>
         logger.error(s"fetchQueryParam failed. fallback return.", ex)
-        val fallback = new util.ArrayList[QueryRequestWithResult]()
-        fallback.add(QueryRequestWithResult(queryRequest, QueryResult(isFailure = true)))
-        fallback
+        QueryRequestWithResult(queryRequest, QueryResult(isFailure = true))
       }
     }
     def checkAndExpire(request: GetRequest,
                        cacheKey: Long,
                        cacheTTL: Long,
                        cachedAt: Long,
-                       defer: Deferred[util.ArrayList[QueryRequestWithResult]]): Deferred[util.ArrayList[QueryRequestWithResult]] = {
+                       defer: Deferred[QueryRequestWithResult]): Deferred[QueryRequestWithResult] = {
       if (System.currentTimeMillis() >= cachedAt + cacheTTL) {
         // future is too old. so need to expire and fetch new data from storage.
         futureCache.remove(cacheKey)
 //        futureCache.asMap().remove(cacheKey)
-        val newPromise = new Deferred[util.ArrayList[QueryRequestWithResult]]()
+        val newPromise = new Deferred[QueryRequestWithResult]()
         val newElement = new Element(cacheKey, (System.currentTimeMillis(), newPromise))
 
 //        futureCache.asMap().putIfAbsent(cacheKey, (System.currentTimeMillis(), newPromise)) match {
@@ -169,7 +162,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
             newPromise
 //          case (cachedAt, oldDefer) => oldDefer
           case oldElement =>
-            val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[Tuple2[Long, Deferred[util.ArrayList[QueryRequestWithResult]]]]
+            val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[(Long, Deferred[QueryRequestWithResult])]
             oldDefer
         }
       } else {
@@ -191,7 +184,7 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       cacheVal match {
         case null =>
           // here there is no promise set up for this cacheKey so we need to set promise on future cache.
-          val promise = new Deferred[util.ArrayList[QueryRequestWithResult]]()
+          val promise = new Deferred[QueryRequestWithResult]()
           val now = System.currentTimeMillis()
           val newElement = new Element(cacheKey, (now, promise))
 //          val (cachedAt, defer) = futureCache.asMap().putIfAbsent(cacheKey, (now, promise)) match {
@@ -204,14 +197,14 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
               (now, promise)
 //            case oldVal => oldVal
             case oldElement =>
-              val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[Tuple2[Long, Deferred[util.ArrayList[QueryRequestWithResult]]]]
+              val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[(Long, Deferred[QueryRequestWithResult])]
               (cachedAt, oldDefer)
           }
           checkAndExpire(request, cacheKey, cacheTTL, cachedAt, defer)
 //        case (cachedAt, defer) =>
         case oldElement =>
-          val (cachedAt, defer) = oldElement.getObjectValue.asInstanceOf[Tuple2[Long, Deferred[util.ArrayList[QueryRequestWithResult]]]]
-          checkAndExpire(request, cacheKey, cacheTTL, cachedAt, defer)
+          val (cachedAt, oldDefer) = oldElement.getObjectValue.asInstanceOf[(Long, Deferred[QueryRequestWithResult])]
+          checkAndExpire(request, cacheKey, cacheTTL, cachedAt, oldDefer)
       }
     }
   }
@@ -235,16 +228,16 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
 
   override def fetches(queryRequestWithScoreLs: Seq[(QueryRequest, Double)],
                        prevStepEdges: Map[VertexId, Seq[EdgeWithScore]]): Future[Seq[QueryRequestWithResult]] = {
-    val defers: Seq[Deferred[util.ArrayList[QueryRequestWithResult]]] = for {
+    val defers: Seq[Deferred[QueryRequestWithResult]] = for {
       (queryRequest, prevStepScore) <- queryRequestWithScoreLs
       parentEdges <- prevStepEdges.get(queryRequest.vertex.id)
     } yield {
         fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges)
       }
 
-    val grouped: Deferred[util.ArrayList[util.ArrayList[QueryRequestWithResult]]] = Deferred.group(defers)
-    grouped withCallback { queryResultsLs: util.ArrayList[util.ArrayList[QueryRequestWithResult]] =>
-        queryResultsLs.flatten.toIndexedSeq
+    val grouped: Deferred[util.ArrayList[QueryRequestWithResult]] = Deferred.group(defers)
+    grouped withCallback { queryResults: util.ArrayList[QueryRequestWithResult] =>
+      queryResults.toIndexedSeq
     } toFuture
   }
 }
