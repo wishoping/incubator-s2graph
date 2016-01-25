@@ -37,7 +37,9 @@ class RedisStorage(override val config: Config, vertexCache: Cache[Integer, Opti
 
   override def checkEdges(params: Seq[(Vertex, Vertex, QueryParam)]): Future[Seq[QueryRequestWithResult]] = ???
 
-  override def flush(): Unit = ???
+  override def flush(): Unit = {
+    // no flush feature needed
+  }
 
   override def vertexCacheOpt: Option[Cache[Integer, Option[Vertex]]] = ???
 
