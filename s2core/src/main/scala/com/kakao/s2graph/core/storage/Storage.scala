@@ -2,16 +2,13 @@ package com.kakao.s2graph.core.storage
 
 import com.google.common.cache.Cache
 import com.kakao.s2graph.core._
-import com.kakao.s2graph.core.mysqls.{Service, Label}
+import com.kakao.s2graph.core.mysqls.Label
 import com.kakao.s2graph.core.utils.logger
-import com.typesafe.config.Config
-
 
 import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
 
-abstract class Storage(val config: Config)(implicit ec: ExecutionContext) {
+abstract class Storage(implicit ec: ExecutionContext) {
 
   def cacheOpt: Option[Cache[Integer, Seq[QueryResult]]]
 
@@ -68,13 +65,6 @@ abstract class Storage(val config: Config)(implicit ec: ExecutionContext) {
   def incrementCounts(edges: Seq[Edge]): Future[Seq[(Boolean, Long)]]
 
   def flush(): Unit
-
-  def createTable(zkAddr: String,
-                  tableName: String,
-                  cfs: List[String],
-                  regionMultiplier: Int,
-                  ttl: Option[Int],
-                  compressionAlgorithm: String): Unit
 
   def toEdge[K: CanSKeyValue](kv: K,
                               queryParam: QueryParam,

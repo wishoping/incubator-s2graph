@@ -17,13 +17,11 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
 
   var graph: Graph = _
   var parser: RequestParser = _
-  var management: Management = _
   var config: Config = _
 
   override def beforeAll = {
     config = ConfigFactory.load()
     graph = new Graph(config)(ExecutionContext.Implicits.global)
-    management = new Management(graph)
     parser = new RequestParser(graph.config)
     initTestData()
   }
@@ -45,7 +43,7 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
       parser.toServiceElements(jsValue)
 
     val tryRes =
-      management.createService(serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm)
+      Management.createService(serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm)
     println(s">> Service created : $createService, $tryRes")
 
     val labelNames = Map(testLabelName -> testLabelNameCreate,
@@ -62,7 +60,7 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
           val json = Json.parse(create)
           val tryRes = for {
             labelArgs <- parser.toLabelElements(json)
-            label <- (management.createLabel _).tupled(labelArgs)
+            label <- (Management.createLabel _).tupled(labelArgs)
           } yield label
 
           tryRes.get
@@ -116,6 +114,19 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
       val result = Await.result(ret, HttpRequestWaitingTime)
       val jsResult = PostProcess.toSimpleVertexArrJson(result)
 
+      jsResult
+    }
+
+    def checkEdgesSync(checkEdgeJson: JsValue): JsValue = {
+      logger.info(Json.prettyPrint(checkEdgeJson))
+
+      val ret = parser.toCheckEdgeParam(checkEdgeJson) match {
+        case (e, _) => graph.checkEdges(e)
+      }
+      val result = Await.result(ret, HttpRequestWaitingTime)
+      val jsResult = PostProcess.toSimpleVertexArrJson(result)
+
+      logger.info(jsResult.toString)
       jsResult
     }
 

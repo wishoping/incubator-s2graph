@@ -1,21 +1,24 @@
 package com.kakao.s2graph.core.storage.redis
 
 import com.kakao.s2graph.core.Integrate.IntegrateCommon
+import com.kakao.s2graph.core.mysqls.Label
 import com.kakao.s2graph.core.rest.RequestParser
 import com.kakao.s2graph.core.{Graph, Management}
-import com.kakao.s2graph.core.mysqls.Label
-import com.typesafe.config.{ConfigValueFactory, ConfigValue, ConfigFactory}
-import play.api.libs.json.Json
+import com.typesafe.config.{ConfigFactory, ConfigValueFactory}
+import org.scalatest.BeforeAndAfterEach
+import play.api.libs.json.{JsValue, Json}
 
-import collection.JavaConversions._
-
+import scala.collection.JavaConversions._
 import scala.concurrent.ExecutionContext
 
 /**
   * Created by june.kay on 2016. 1. 20..
   */
-class RedisCrudTest extends IntegrateCommon{
+class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
   import TestUtil._
+
+  val insert = "insert"
+  val e = "e"
 
   override def beforeAll = {
     config = ConfigFactory.load()
@@ -26,7 +29,6 @@ class RedisCrudTest extends IntegrateCommon{
     println(s">> Config for redis.instances : ${config.getStringList("storage.redis.instances").mkString(",")}")
 
     graph = new Graph(config)(ExecutionContext.Implicits.global)
-    management = new Management(graph)
     parser = new RequestParser(graph.config)
     initTestData()
   }
@@ -44,7 +46,7 @@ class RedisCrudTest extends IntegrateCommon{
       parser.toServiceElements(jsValue)
 
     val tryRes =
-      management.createService(serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm)
+      Management.createService(serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm)
     println(s">> Service created : $createService, $tryRes")
 
     // with only v3 label
@@ -59,7 +61,7 @@ class RedisCrudTest extends IntegrateCommon{
           val json = Json.parse(create)
           val tryRes = for {
             labelArgs <- parser.toLabelElements(json)
-            label <- (management.createLabel _).tupled(labelArgs)
+            label <- (Management.createLabel _).tupled(labelArgs)
           } yield label
 
           tryRes.get
@@ -78,8 +80,27 @@ class RedisCrudTest extends IntegrateCommon{
   }
 
 
-  test("test CRUD") {
-    println(">>>>> Test crud")
+  test("test insert/check edges") {
+    insertEdgesSync(
+      toEdge(1, insert, e, 1, 1000, testLabelName2),
+      toEdge(1, insert, e, 2, 2000, testLabelName2)
+    )
+    def queryCheckEdges(fromId: Int, toId: Int): JsValue = {
+      Json.arr(
+        Json.obj(
+          "label" -> testLabelName2,
+          "direction" -> "out",
+          "from" -> fromId,
+          "to" -> toId
+        )
+      )
+    }
+
+    var result = checkEdgesSync(queryCheckEdges(1, 1000))
+    (result \ "size").toString should be ("1")  // edge 1 -> 1000 should be present
+
+    result = checkEdgesSync(queryCheckEdges(2, 2000))
+    (result \ "size").toString should be ("1")  // edge 2 -> 2000 should be present
   }
 
 

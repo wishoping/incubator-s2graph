@@ -50,8 +50,8 @@ object AsynchbaseStorage {
   }
 }
 
-class AsynchbaseStorage(override val config: Config, vertexCache: Cache[Integer, Option[Vertex]])
-                       (implicit ec: ExecutionContext) extends Storage(config) {
+class AsynchbaseStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex]])
+                       (implicit ec: ExecutionContext) extends Storage {
 
   import AsynchbaseStorage._
 

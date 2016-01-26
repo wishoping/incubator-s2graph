@@ -18,12 +18,10 @@ trait TestCommonWithModels {
 
   var graph: Graph = _
   var config: Config = _
-  var management: Management = _
 
   def initTests() = {
     config = ConfigFactory.load()
     graph = new Graph(config)(ExecutionContext.Implicits.global)
-    management = new Management(graph)
 
     implicit val session = AutoSession
 
@@ -77,8 +75,8 @@ trait TestCommonWithModels {
 
   def createTestService() = {
     implicit val session = AutoSession
-    management.createService(serviceName, cluster, hTableName, preSplitSize, hTableTTL = None, "gz")
-    management.createService(serviceNameV2, cluster, hTableName, preSplitSize, hTableTTL = None, "gz")
+    Management.createService(serviceName, cluster, hTableName, preSplitSize, hTableTTL = None, "gz")
+    Management.createService(serviceNameV2, cluster, hTableName, preSplitSize, hTableTTL = None, "gz")
   }
 
   def deleteTestService() = {
@@ -97,16 +95,16 @@ trait TestCommonWithModels {
 
   def createTestLabel() = {
     implicit val session = AutoSession
-    management.createLabel(labelName, serviceName, columnName, columnType, serviceName, columnName, columnType,
+    Management.createLabel(labelName, serviceName, columnName, columnType, serviceName, columnName, columnType,
       isDirected = true, serviceName, testIdxProps, testProps, consistencyLevel, Some(hTableName), hTableTTL, VERSION1, false, "lg4")
 
-    management.createLabel(labelNameV2, serviceNameV2, columnNameV2, columnTypeV2, serviceNameV2, tgtColumnNameV2, tgtColumnTypeV2,
+    Management.createLabel(labelNameV2, serviceNameV2, columnNameV2, columnTypeV2, serviceNameV2, tgtColumnNameV2, tgtColumnTypeV2,
       isDirected = true, serviceNameV2, testIdxProps, testProps, consistencyLevel, Some(hTableName), hTableTTL, VERSION2, false, "lg4")
 
-    management.createLabel(undirectedLabelName, serviceName, columnName, columnType, serviceName, tgtColumnName, tgtColumnType,
+    Management.createLabel(undirectedLabelName, serviceName, columnName, columnType, serviceName, tgtColumnName, tgtColumnType,
       isDirected = false, serviceName, testIdxProps, testProps, consistencyLevel, Some(hTableName), hTableTTL, VERSION1, false, "lg4")
 
-    management.createLabel(undirectedLabelNameV2, serviceNameV2, columnNameV2, columnTypeV2, serviceNameV2, tgtColumnNameV2, tgtColumnTypeV2,
+    Management.createLabel(undirectedLabelNameV2, serviceNameV2, columnNameV2, columnTypeV2, serviceNameV2, tgtColumnNameV2, tgtColumnTypeV2,
       isDirected = false, serviceName, testIdxProps, testProps, consistencyLevel, Some(hTableName), hTableTTL, VERSION2, false, "lg4")
   }
 

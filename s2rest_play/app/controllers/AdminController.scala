@@ -14,7 +14,7 @@ import scala.util.{Failure, Success, Try}
 object AdminController extends Controller {
 
   import ApplicationController._
-  private val management: Management = com.kakao.s2graph.rest.Global.storageManagement
+  private val s2: Graph = com.kakao.s2graph.rest.Global.s2graph
   private val requestParser: RequestParser = com.kakao.s2graph.rest.Global.s2parser
 
   /**
@@ -185,7 +185,7 @@ object AdminController extends Controller {
 
   def createServiceInner(jsValue: JsValue) = {
     val (serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm) = requestParser.toServiceElements(jsValue)
-    management.createService(serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm)
+    Management.createService(serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm)
   }
 
   /**
@@ -200,7 +200,7 @@ object AdminController extends Controller {
 
   def createLabelInner(json: JsValue) = for {
     labelArgs <- requestParser.toLabelElements(json)
-    label <- (management.createLabel _).tupled(labelArgs)
+    label <- (Management.createLabel _).tupled(labelArgs)
   } yield label
 
   /**
@@ -325,7 +325,7 @@ object AdminController extends Controller {
    * @return
    */
   def copyLabel(oldLabelName: String, newLabelName: String) = Action { request =>
-    val copyTry = management.copyLabel(oldLabelName, newLabelName, Some(newLabelName))
+    val copyTry = Management.copyLabel(oldLabelName, newLabelName, Some(newLabelName))
     tryResponse(copyTry)(_.label + "created")
   }
 
@@ -411,9 +411,9 @@ object AdminController extends Controller {
     //    Management.createTable(cluster, hTableName, List("e", "v"), preSplitSize, hTableTTL, compressionAlgorithm)
     request.body.asJson.map(_.validate[HTableParams] match {
       case JsSuccess(hTableParams, _) => {
-        management.createTable(hTableParams.cluster, hTableParams.hTableName, List("e", "v"),
+        Management.createTable(hTableParams.cluster, hTableParams.hTableName, List("e", "v"),
           hTableParams.preSplitSize, hTableParams.hTableTTL,
-          hTableParams.compressionAlgorithm.getOrElse(Management.DefaultCompressionAlgorithm))
+          hTableParams.compressionAlgorithm.getOrElse(Management.defaultCompressionAlgorithm))
         logger.info(hTableParams.toString())
         ok(s"HTable was created.")
       }

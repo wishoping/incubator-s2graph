@@ -1,11 +1,13 @@
-package com.kakao.s2graph.core.storage.hbase
+package com.kakao.s2graph.core.storage.redis
 
 import com.kakao.s2graph.core.storage.{SKeyValue, StorageDeserializable}
 import com.kakao.s2graph.core.types.{LabelWithDirection, SourceVertexId}
 import org.apache.hadoop.hbase.util.Bytes
 
-
-trait HDeserializable[E] extends StorageDeserializable[E] {
+/**
+ * @author Junki Kim (wishoping@gmail.com) and Hyunsung Jo (hyunsung.jo@gmail.com) on 2016/Jan/07.
+ */
+trait RDeserializable[E] extends StorageDeserializable[E]{
   import StorageDeserializable._
 
   /** version 1 and version 2 share same code for parsing row key part */
@@ -20,4 +22,5 @@ trait HDeserializable[E] extends StorageDeserializable[E] {
     val rowLen = srcIdLen + 4 + 1
     (srcVertexId, labelWithDir, labelIdxSeq, isInverted, rowLen)
   }
+
 }
