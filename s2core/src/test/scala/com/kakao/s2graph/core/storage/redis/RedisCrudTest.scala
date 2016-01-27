@@ -3,6 +3,7 @@ package com.kakao.s2graph.core.storage.redis
 import com.kakao.s2graph.core.Integrate.IntegrateCommon
 import com.kakao.s2graph.core.mysqls.Label
 import com.kakao.s2graph.core.rest.RequestParser
+import com.kakao.s2graph.core.utils.logger
 import com.kakao.s2graph.core.{Graph, Management}
 import com.typesafe.config.{ConfigFactory, ConfigValueFactory}
 import org.scalatest.BeforeAndAfterEach
@@ -12,9 +13,10 @@ import scala.collection.JavaConversions._
 import scala.concurrent.ExecutionContext
 
 /**
-  * Created by june.kay on 2016. 1. 20..
-  */
+ * Created by june.kay on 2016. 1. 20..
+ */
 class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
+
   import TestUtil._
 
   val insert = "insert"
@@ -34,8 +36,8 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
   }
 
   /**
-    * Make Service, Label, Vertex for integrate test
-    */
+   * Make Service, Label, Vertex for integrate test
+   */
   override def initTestData() = {
     println("[Redis init start]: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
     Management.deleteService(testServiceName)
@@ -80,27 +82,55 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
   }
 
 
-  test("test insert/check edges") {
+  test("test insert/check/get edges") {
     insertEdgesSync(
       toEdge(1, insert, e, 1, 1000, testLabelName2),
       toEdge(1, insert, e, 2, 2000, testLabelName2)
     )
-    def queryCheckEdges(fromId: Int, toId: Int): JsValue = {
-      Json.arr(
-        Json.obj(
-          "label" -> testLabelName2,
-          "direction" -> "out",
-          "from" -> fromId,
-          "to" -> toId
-        )
-      )
-    }
+    def queryCheckEdges(fromId: Int, toId: Int): JsValue = Json.parse(
+      s"""
+         |[{
+         |  "label": "$testLabelName2",
+         |  "direction": "out",
+         |  "from": $fromId,
+         |  "to": $toId
+         |}]
+       """.stripMargin
+    )
+
+    logger.info("1111")
+    def querySingle(id: Int, offset: Int = 0, limit: Int = 10) = Json.parse(
+      s"""
+         |{
+         |	"srcVertices": [{
+         |		"serviceName": "$testServiceName",
+         |		"columnName": "$testColumnName",
+         |		"id": $id
+         |	}],
+         |	"steps": [
+         |		[{
+         |			"label": "$testLabelName2",
+         |			"direction": "out",
+         |			"offset": $offset,
+         |			"limit": $limit
+         |		}]
+         |	]
+         |}
+       """.stripMargin
+    )
+    logger.info("2222")
 
     var result = checkEdgesSync(queryCheckEdges(1, 1000))
-    (result \ "size").toString should be ("1")  // edge 1 -> 1000 should be present
+    logger.info(result.toString())
+    (result \ "size").toString should be("1") // edge 1 -> 1000 should be present
 
     result = checkEdgesSync(queryCheckEdges(2, 2000))
-    (result \ "size").toString should be ("1")  // edge 2 -> 2000 should be present
+    logger.info(result.toString())
+    (result \ "size").toString should be("1") // edge 2 -> 2000 should be present
+
+    result = getEdgesSync(querySingle(1, 0, 10))
+    logger.info(result.toString())
+    (result \ "size").toString should be("1") // edge 1 -> 2000 should be present
   }
 
 

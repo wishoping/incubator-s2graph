@@ -194,7 +194,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
 
   // Interface
-  override def getEdges(q: Query): Future[Seq[QueryRequestWithResult]] = ???
+  override def getEdges(q: Query): Future[Seq[QueryRequestWithResult]] = queryBuilder.getEdges(q)
 
   override def deleteAllAdjacentEdges(srcVertices: List[Vertex], labels: Seq[Label], dir: Int, ts: Long): Future[Boolean] = ???
 
