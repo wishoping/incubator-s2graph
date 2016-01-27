@@ -3,16 +3,16 @@ package com.kakao.s2graph.core.storage.redis
 import java.util.concurrent.TimeUnit
 
 import com.google.common.cache.CacheBuilder
-import com.kakao.s2graph.core.mysqls.LabelMeta
-import com.kakao.s2graph.core.types._
 import com.kakao.s2graph.core._
+import com.kakao.s2graph.core.mysqls.LabelMeta
 import com.kakao.s2graph.core.storage.QueryBuilder
+import com.kakao.s2graph.core.types._
 import com.kakao.s2graph.core.utils.logger
 import org.apache.hadoop.hbase.util.Bytes
 
 import scala.annotation.tailrec
-import scala.collection.{Seq, Map}
-import scala.concurrent.{Future, ExecutionContext, Promise}
+import scala.collection.{Map, Seq}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.Random
 
 /**
@@ -208,6 +208,22 @@ class RedisQueryBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
 
   def toCacheKeyBytes(request: RedisGetRequest): Array[Byte] = ???
 
-  def fetches(queryRequestWithScoreLs: Seq[(QueryRequest, Double)], prevStepEdges: Map[VertexId, Seq[EdgeWithScore]]): Future[Seq[QueryRequestWithResult]] = ???
+  override def fetches(queryRequestWithScoreLs: Seq[(QueryRequest, Double)],
+                       prevStepEdges: Map[VertexId, Seq[EdgeWithScore]]): Future[Seq[QueryRequestWithResult]] = {
+    val reads: Seq[Future[QueryRequestWithResult]] = for {
+      (queryRequest, prevStepScore) <- queryRequestWithScoreLs
+    } yield {
+        val prevStepEdgesOpt = prevStepEdges.get(queryRequest.vertex.id)
+        if (prevStepEdgesOpt.isEmpty) throw new RuntimeException("miss match on prevStepEdge and current GetRequest")
+
+        val parentEdges = for {
+          parentEdge <- prevStepEdgesOpt.get
+        } yield parentEdge
+
+        fetch(queryRequest, prevStepScore, isInnerCall = true, parentEdges)
+      }
+
+    Future.sequence(reads)
+  }
 }
 
