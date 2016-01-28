@@ -27,8 +27,8 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
       .withValue("storage.engine", ConfigValueFactory.fromAnyRef("redis")) // for redis test
       .withValue("storage.redis.instances", ConfigValueFactory.fromIterable(List[String]("localhost"))) // for redis test
 
-    println(s">> Config for storage.engine : ${config.getString("storage.engine")}")
-    println(s">> Config for redis.instances : ${config.getStringList("storage.redis.instances").mkString(",")}")
+    logger.info(s">> Config for storage.engine : ${config.getString("storage.engine")}")
+    logger.info(s">> Config for redis.instances : ${config.getStringList("storage.redis.instances").mkString(",")}")
 
     graph = new Graph(config)(ExecutionContext.Implicits.global)
     parser = new RequestParser(graph.config)
@@ -39,7 +39,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
    * Make Service, Label, Vertex for integrate test
    */
   override def initTestData() = {
-    println("[Redis init start]: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    logger.info("[Redis init start]: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
     Management.deleteService(testServiceName)
 
     // 1. createService
@@ -49,7 +49,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
 
     val tryRes =
       Management.createService(serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm)
-    println(s">> Service created : $createService, $tryRes")
+    logger.info(s">> Service created : $createService, $tryRes")
 
     // with only v3 label
     val labelNames = Map(testLabelName2 -> testLabelName2Create)
@@ -68,7 +68,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
 
           tryRes.get
         case Some(label) =>
-          println(s">> Label already exist: $create, $label")
+          logger.info(s">> Label already exist: $create, $label")
       }
     }
 
@@ -78,7 +78,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
       Management.addVertexProp(testServiceName, testColumnName, key, keyType)
     }
 
-    println("[Redis init end]: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    logger.info("[Redis init end]: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
   }
 
 

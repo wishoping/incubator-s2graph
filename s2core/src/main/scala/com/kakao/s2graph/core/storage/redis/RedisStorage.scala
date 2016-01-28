@@ -78,7 +78,10 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
           SKeyValue(Array.empty[Byte], get.key, Array.empty[Byte], Array.empty[Byte], v, 0L)
         )
         if (get.isIncludeDegree) {
-          val degreeBytes = jedis.get(get.degreeEdgeKey)
+          val fetched = jedis.get(get.degreeEdgeKey)
+          val degree = fetched.map("%c".format(_)).mkString("").toLong
+          val degreeBytes = Bytes.toBytes(degree)
+          logger.info(s">> degree : $degree, bytes : ${GraphUtil.bytesToHexString(degreeBytes)}")
           val zeroLenBytes = Array.fill[Byte](1)(0.toByte)
           result + SKeyValue(Array.empty[Byte], get.key, Array.empty[Byte], Array.empty[Byte], Bytes.add(zeroLenBytes, degreeBytes), 0L)
         } else result
@@ -87,6 +90,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
           logger.info(s">> get success!! $v")
           v
         case Failure(e) =>
+          e.printStackTrace()
           logger.info(s">> get fail!! $e")
           Set[SKeyValue]()
       }
@@ -96,17 +100,17 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   private def writeToStorage(rpc: RedisRPC): Future[Boolean] = {
     Future[Boolean] {
       client.doBlockWithKey[Boolean]("" /* sharding key */) { jedis =>
-        println(s">> [writeToStorage] ")
+        logger.info(s">> [writeToStorage] ")
         val write = rpc match {
           case d: RedisDeleteRequest => if (jedis.zrem(d.key, d.value) == 1) true else false
           case p: RedisPutRequest if p.qualifier.length > 0 => // Edge put operation
-            println(s">> [writeToStorage] edge put : $p")
+            logger.info(s">> [writeToStorage] edge put : $p")
             if (jedis.zadd(p.key, RedisZsetScore, p.value) == 1) true else false
           case p: RedisPutRequest if p.qualifier.length == 0 => // Vertex put operation
-            println(s">> [writeToStorage] vertex put : $p")
+            logger.info(s">> [writeToStorage] vertex put : $p")
             if (jedis.zadd(p.key, RedisZsetScore, p.qualifier ++ p.value) == 1) true else false
           case i: RedisAtomicIncrementRequest =>
-            println(s">> [writeToStorage] Atomic increment : $i")
+            logger.info(s">> [writeToStorage] Atomic increment : $i")
             atomicIncrement(i)
         }
         write
@@ -170,7 +174,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
   def atomicIncrement(req: RedisAtomicIncrementRequest): Boolean = {
     client.doBlockWithKey[Boolean]("" /* shard key */) { jedis =>
-      println(s">> [atomicIncrement] key : ${GraphUtil.bytesToHexString(req.key)}, value : ${GraphUtil.bytesToHexString(req.value)}, delta : ${req.delta}")
+      logger.info(s">> [atomicIncrement] key : ${GraphUtil.bytesToHexString(req.key)}, value : ${GraphUtil.bytesToHexString(req.value)}, delta : ${req.delta}")
       jedis.watch(req.key)
 
       // TODO Do we need to add transaction - multi?
@@ -243,7 +247,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
     val q = Query.toQuery(Seq(edge.srcVertex), _queryParam)
     val queryRequest = QueryRequest(q, 0, edge.srcVertex, _queryParam)
 
-    println(s">> [fetchSanps")
+    logger.info(s">> [fetchSanps")
 
 
     get(queryBuilder.buildRequest(queryRequest)) map { s =>
@@ -403,7 +407,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       val releaseLockEdgePut = toPutRequest(releaseLockEdge)
       val lockEdgePut = toPutRequest(lockEdge)
 
-      println(s">> [releaseLock] start compareAndSet")
+      logger.info(s">> [releaseLock] start compareAndSet")
       compareAndSet(releaseLockEdgePut, lockEdgePut.value).recoverWith {
         case ex: Exception =>
           logger.error(s"ReleaseLock RPC Failed.")
