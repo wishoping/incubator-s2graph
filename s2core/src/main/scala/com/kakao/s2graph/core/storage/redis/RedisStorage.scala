@@ -78,7 +78,10 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
           SKeyValue(Array.empty[Byte], get.key, Array.empty[Byte], Array.empty[Byte], v, 0L)
         )
         if (get.isIncludeDegree) {
-          val degreeBytes = jedis.get(get.degreeEdgeKey)
+          val fetched = jedis.get(get.degreeEdgeKey)
+          val degree = fetched.map("%c".format(_)).mkString("").toLong
+          val degreeBytes = Bytes.toBytes(degree)
+          println(s">> degree : $degree, bytes : ${GraphUtil.bytesToHexString(degreeBytes)}")
           val zeroLenBytes = Array.fill[Byte](1)(0.toByte)
           result + SKeyValue(Array.empty[Byte], get.key, Array.empty[Byte], Array.empty[Byte], Bytes.add(zeroLenBytes, degreeBytes), 0L)
         } else result
@@ -87,6 +90,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
           logger.info(s">> get success!! $v")
           v
         case Failure(e) =>
+          e.printStackTrace()
           logger.info(s">> get fail!! $e")
           Set[SKeyValue]()
       }

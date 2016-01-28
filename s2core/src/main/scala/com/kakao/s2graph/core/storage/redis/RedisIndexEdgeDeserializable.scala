@@ -22,18 +22,16 @@ class RedisIndexEdgeDeserializable extends StorageDeserializable[IndexEdge] {
 
   private def parseDegreeQualifier(kv: SKeyValue, version: String): QualifierRaw = {
     // skip first two length bytes(because it will be zero)
-    var pos = 2
-    val (tsInnerVal, numLenBytesRead) = InnerVal.fromBytes(kv.value, pos, 0, version)
-    val ts = tsInnerVal.value.toString.toLong
-    pos += numLenBytesRead
-    val (degreeInnerVal, numValueBytesRead) = InnerVal.fromBytes(kv.value, pos, 0, version)
-    val degree = degreeInnerVal.value.toString.toLong
-    pos += numValueBytesRead
+    var pos = 1
+    val degree = Bytes.toLong(kv.value, pos, 8)
+    // just for long bytes array size
+    pos += 8
 
     val idxPropsRaw = Array(LabelMeta.degreeSeq -> InnerVal.withLong(degree, version))
     val tgtVertexIdRaw = VertexId(HBaseType.DEFAULT_COL_ID, InnerVal.withStr("0", version))
 
-    (idxPropsRaw, tgtVertexIdRaw, GraphUtil.operations("insert"), false, ts, pos)
+    // no timestamp for degree edge
+    (idxPropsRaw, tgtVertexIdRaw, GraphUtil.operations("insert"), false, 0l, pos)
   }
 
   /**
@@ -109,7 +107,7 @@ class RedisIndexEdgeDeserializable extends StorageDeserializable[IndexEdge] {
    * @param kv
    * @return true if first byte is zero value
    */
-  private def isEmptyQualifier(kv: SKeyValue) = Array.fill[Byte](1)(kv.value(0)) == Bytes.toBytes(0.toByte)
+  private def isEmptyQualifier(kv: SKeyValue) = Bytes.compareTo(Array.fill[Byte](1)(kv.value(0)), Array.fill[Byte](1)(0)) == 0
 
   def fromKeyValues[T: CanSKeyValue](queryParam: QueryParam, _kvs: Seq[T], version: String, cacheElementOpt: Option[IndexEdge]): IndexEdge = {
     assert(_kvs.size == 1)
