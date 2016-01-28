@@ -23,14 +23,14 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
 
   def incrementCount(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
-      println(s">> [incrementCount] len: ${kv.value.length} value : ${toHex(kv.value)}")
+      logger.info(s">> [incrementCount] len: ${kv.value.length} value : ${toHex(kv.value)}")
       val offset = kv.value.length - 8
       new RedisAtomicIncrementRequest(kv.row, kv.value, Bytes.toLong(kv.value, offset, 8), isDegree = false)
     }
 
   def increment(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
-      println(s">> [increment] len: ${kv.value.length} value : ${toHex(kv.value)}")
+      logger.info(s">> [increment] len: ${kv.value.length} value : ${toHex(kv.value)}")
       val offset = kv.value.length - 8
       new RedisAtomicIncrementRequest(kv.row, kv.value, Bytes.toLong(kv.value, offset, 8), isDegree = true)
     }
@@ -67,7 +67,7 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
         List.empty[RedisAtomicIncrementRequest]
       case (true, false) =>
 
-        println(s">> [increments] edgesToInsert ")
+        logger.info(s">> [increments] edgesToInsert ")
         /** no edges to delete but there is new edges to insert so increase degree by 1 */
         edgeMutate.edgesToInsert.flatMap { e => buildIncrementsAsync(e) }
       case (false, true) =>
