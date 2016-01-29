@@ -23,15 +23,15 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
 
   def incrementCount(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
-      logger.info(s">> [incrementCount] len: ${kv.value.length} value : ${toHex(kv.value)}")
       val offset = kv.value.length - 8
+      println(s">> [incrementCount] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
       new RedisAtomicIncrementRequest(kv.row, kv.value, Bytes.toLong(kv.value, offset, 8), isDegree = false)
     }
 
   def increment(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
-      logger.info(s">> [increment] len: ${kv.value.length} value : ${toHex(kv.value)}")
       val offset = kv.value.length - 8
+      println(s">> [increment] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
       new RedisAtomicIncrementRequest(kv.row, kv.value, Bytes.toLong(kv.value, offset, 8), isDegree = true)
     }
 
@@ -67,11 +67,12 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
         List.empty[RedisAtomicIncrementRequest]
       case (true, false) =>
 
-        logger.info(s">> [increments] edgesToInsert ")
+        println(s">> [increments] new edges and increase degree ")
         /** no edges to delete but there is new edges to insert so increase degree by 1 */
         edgeMutate.edgesToInsert.flatMap { e => buildIncrementsAsync(e) }
       case (false, true) =>
 
+        println(s">> [increments] delete edges and increase degree ")
         /** no edges to insert but there is old edges to delete so decrease degree by 1 */
         edgeMutate.edgesToDelete.flatMap { e => buildIncrementsAsync(e, -1L) }
       case (false, false) =>
@@ -95,7 +96,8 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
   def buildDeletesAsync(indexedEdge: IndexEdge): Seq[RedisRPC] = ???
 
   /** IndexEdge */
-  def buildIncrementsAsync(indexedEdge: IndexEdge, amount: Long): Seq[RedisRPC] =
+  def buildIncrementsAsync(indexedEdge: IndexEdge, amount: Long): Seq[RedisRPC] = {
+    println(s"<< [RedisMutationBuilder.buildIncrementsAsync] ")
     storage.indexEdgeSerializer(indexedEdge).toKeyValues.headOption match {
       case None => Nil
       case Some(kv) =>
@@ -103,7 +105,7 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
         val copiedKV = kv.copy(qualifier = Array.empty[Byte], value = Bytes.add(zeroLenBytes, Bytes.toBytes(amount)))
         increment(Seq(copiedKV))
     }
-
+  }
 
   def snapshotEdgeMutations(edgeMutate: EdgeMutate): Seq[RedisRPC] = ???
 
@@ -116,11 +118,17 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
         incrementCount(Seq(copiedKV))
     }
 
-  def buildPutsAsync(indexedEdge: IndexEdge): Seq[RedisRPC] =
-    put(storage.indexEdgeSerializer(indexedEdge).toKeyValues)
+  def buildPutsAsync(indexedEdge: IndexEdge): Seq[RedisRPC] = {
+    println(s"<< [RedisMutationBuilder.buildPutsAsync] enter")
+    println(s"\t<< [RedisMutationBuilder.buildPutsAsync] indexedEdge(${indexedEdge.labelIndex.name}, ${indexedEdge.labelIndexSeq}) : src[${indexedEdge.srcVertex}] -> tgt[${indexedEdge.tgtVertex}]")
+    val t = storage.indexEdgeSerializer(indexedEdge).toKeyValues
+    println(s"\t<< [RedisMutationBuilder.buildPutsAsync] kvs : ${t.length}")
+    put(t)
+  }
 
   /** EdgeMutate */
   def indexedEdgeMutations(edgeMutate: EdgeMutate): Seq[RedisRPC] = {
+    println(s"<< [indexedEdgeMutations] enter")
     val deleteMutations = edgeMutate.edgesToDelete.flatMap(edge => buildDeletesAsync(edge))
     val insertMutations = edgeMutate.edgesToInsert.flatMap(edge => buildPutsAsync(edge))
 

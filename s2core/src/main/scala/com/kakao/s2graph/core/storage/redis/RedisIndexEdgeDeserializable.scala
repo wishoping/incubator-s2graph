@@ -52,6 +52,9 @@ class RedisIndexEdgeDeserializable extends StorageDeserializable[IndexEdge] {
     // skip first byte: qualifier length
     var pos = 1
     val (idxPropsRaw, tgtVertexIdRaw, tgtVertexIdLen, timestamp) = {
+      println(s">> [parseQualifier] key: ${GraphUtil.bytesToHexString(kv.row)}")
+      println(s">> [parseQualifier] qualifier: ${GraphUtil.bytesToHexString(kv.qualifier)}")
+      println(s">> [parseQualifier] value: ${GraphUtil.bytesToHexString(kv.value)}")
       val (props, endAt) = bytesToProps(kv.value, pos, version)
       pos = endAt
       qualifierLen += endAt

@@ -19,12 +19,23 @@ class RedisIndexEdgeSerializable(indexEdge: IndexEdge) extends StorageSerializab
   val idxPropsBytes = propsToBytes(indexEdge.orders)
 
   def toKeyValues: Seq[SKeyValue] = {
+    println(s"<< [RedisIndexEdgeSerializable:toKeyValues] enter")
     val _srcIdBytes = VertexId.toSourceVertexId(indexEdge.srcVertex.id).bytes
     val srcIdBytes = _srcIdBytes.takeRight(_srcIdBytes.length - GraphUtil.bytesForMurMurHash)
     val labelWithDirBytes = indexEdge.labelWithDir.bytes
     val labelIndexSeqWithIsInvertedBytes = labelOrderSeqWithIsInverted(indexEdge.labelIndexSeq, isInverted = false)
 
+    println(s"\t<< [RedisIndexEdgeSerializable:toKeyValues] src[${indexEdge.srcVertex}] --> tgt[${indexEdge.tgtVertex}]")
+
+    println(s"\t\t<< src vertex id : ${indexEdge.srcVertex.innerId}, bytes : ${GraphUtil.bytesToHexString(srcIdBytes)}")
+    println(s"\t\t<< label with dir : ${indexEdge.labelWithDir}, ${GraphUtil.fromDirection(indexEdge.labelWithDir.dir)}, bytes : ${GraphUtil.bytesToHexString(labelWithDirBytes)}")
+    println(s"\t\t<< label index : ${indexEdge.labelIndex.name}, seq : ${indexEdge.labelIndex.seq}")
+    println(s"\t\t<< label index seq with inverted bytes : ${GraphUtil.bytesToHexString(labelIndexSeqWithIsInvertedBytes)}")
+
     val row = Bytes.add(srcIdBytes, labelWithDirBytes, labelIndexSeqWithIsInvertedBytes)
+    println()
+    println(s"\t\t<< [RedisIndexEdgeSerializable:toKeyValues] row key : ${GraphUtil.bytesToHexString(row)}")
+    println()
     val tgtIdBytes = VertexId.toTargetVertexId(indexEdge.tgtVertex.id).bytes
 
     /**
