@@ -3,7 +3,7 @@ package com.kakao.s2graph.core.storage.redis
 import com.google.common.cache.Cache
 import com.kakao.s2graph.core.GraphExceptions.{PartialFailureException, FetchTimeoutException}
 import com.kakao.s2graph.core._
-import com.kakao.s2graph.core.mysqls.Label
+import com.kakao.s2graph.core.mysqls.{LabelMeta, Label}
 import com.kakao.s2graph.core.storage._
 import com.kakao.s2graph.core.utils.{AsyncRedisClient, logger}
 import com.typesafe.config.Config
@@ -69,7 +69,6 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   }
 
   def get(get: RedisGetRequest): Future[Set[SKeyValue]] = {
-    logger.info(s">> RedisGet get")
     Future[Set[SKeyValue]] {
       // send rpc call to Redis instance
       client.doBlockWithKey[Set[SKeyValue]]("" /* sharding key */) { jedis =>
@@ -79,7 +78,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
         )
         if (get.isIncludeDegree) {
           val fetched = jedis.get(get.degreeEdgeKey)
-          val degree = fetched.map("%c".format(_)).mkString("").toLong
+          val degree = if (fetched != null ) fetched.map("%c".format(_)).mkString("").toLong else  0l
           val degreeBytes = Bytes.toBytes(degree)
           logger.info(s">> degree : $degree, bytes : ${GraphUtil.bytesToHexString(degreeBytes)}")
           val zeroLenBytes = Array.fill[Byte](1)(0.toByte)
@@ -87,10 +86,9 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
         } else result
       } match {
         case Success(v) =>
-          logger.info(s">> get success!! $v")
+//          logger.info(s">> get success!! $v")
           v
         case Failure(e) =>
-          e.printStackTrace()
           logger.info(s">> get fail!! $e")
           Set[SKeyValue]()
       }
@@ -100,14 +98,13 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   private def writeToStorage(rpc: RedisRPC): Future[Boolean] = {
     Future[Boolean] {
       client.doBlockWithKey[Boolean]("" /* sharding key */) { jedis =>
-        logger.info(s">> [writeToStorage] ")
         val write = rpc match {
           case d: RedisDeleteRequest => if (jedis.zrem(d.key, d.value) == 1) true else false
           case p: RedisPutRequest if p.qualifier.length > 0 => // Edge put operation
-            logger.info(s">> [writeToStorage] edge put : $p")
+            logger.info(s">> [writeToStorage] edge put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
             if (jedis.zadd(p.key, RedisZsetScore, p.value) == 1) true else false
           case p: RedisPutRequest if p.qualifier.length == 0 => // Vertex put operation
-            logger.info(s">> [writeToStorage] vertex put : $p")
+            logger.info(s">> [writeToStorage] vertex put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
             if (jedis.zadd(p.key, RedisZsetScore, p.qualifier ++ p.value) == 1) true else false
           case i: RedisAtomicIncrementRequest =>
             logger.info(s">> [writeToStorage] Atomic increment : $i")
@@ -202,7 +199,35 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
   override def deleteAllAdjacentEdges(srcVertices: List[Vertex], labels: Seq[Label], dir: Int, ts: Long): Future[Boolean] = ???
 
-  override def incrementCounts(edges: Seq[Edge]): Future[Seq[(Boolean, Long)]] = ???
+  override def incrementCounts(edges: Seq[Edge]): Future[Seq[(Boolean, Long)]] = {
+    val defers: Seq[Future[(Boolean, Long)]] = for {
+      edge <- edges
+    } yield {
+      Future {
+        val edgeWithIndex = edge.edgesWithIndex.head
+        val countWithTs = edge.propsWithTs(LabelMeta.countSeq)
+        val countVal = countWithTs.innerVal.toString().toLong
+        val incr = mutationBuilder.buildIncrementsCountAsync(edgeWithIndex, countVal).head
+        val request = incr.asInstanceOf[RedisAtomicIncrementRequest]
+        client.doBlockWithKey[(Boolean, Long)]("" /* shard key */) { jedis =>
+          jedis.watch(request.key)
+
+          jedis.incrBy(request.key, request.delta)
+
+          jedis.unwatch()
+          (true, request.delta)
+        } match {
+          case Success(v) =>
+            v
+          case Failure(e) =>
+            logger.error(s"mutation failed. $request", e)
+            (false, -1l)
+        }
+      }
+    }
+
+    Future.sequence(defers)
+  }
 
   override def mutateVertex(vertex: Vertex, withWait: Boolean): Future[Boolean] = ???
 
@@ -247,11 +272,8 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
     val q = Query.toQuery(Seq(edge.srcVertex), _queryParam)
     val queryRequest = QueryRequest(q, 0, edge.srcVertex, _queryParam)
 
-    logger.info(s">> [fetchSanps")
-
-
     get(queryBuilder.buildRequest(queryRequest)) map { s =>
-      logger.info(s">> $s")
+//      logger.info(s">> $s")
       val edgeOpt = toEdges(s.toSeq, queryParam, 1.0, isInnerCall = true, parentEdges = Nil).headOption.map(_.edge)
       (queryParam, edgeOpt, s.headOption)
     }
@@ -318,6 +340,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       logger.debug(s"skip mutate: [$statusCode]\n${edge.toLogString}")
       Future.successful(true)
     } else {
+      logger.info(s"<< [mutate] enter")
       logger.info(s">> mutate start")
       val p = Random.nextDouble()
       if (p < FailProb) throw new PartialFailureException(edge, 1, s"$p")
@@ -326,7 +349,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
           if (ret) {
             debug(ret, "mutate", edge.toSnapshotEdge, _edgeMutate)
           } else {
-            throw new PartialFailureException(edge, 1, "hbase fail.")
+            throw new PartialFailureException(edge, 1, "redis fail.")
           }
           true
         }
@@ -349,7 +372,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
           if (ret) {
             debug(ret, "increment", edge.toSnapshotEdge, _edgeMutate)
           } else {
-            throw new PartialFailureException(edge, 2, "hbase fail.")
+            throw new PartialFailureException(edge, 2, "redis fail.")
           }
           true
         }
@@ -362,7 +385,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       logger.debug(s"skip acquireLock: [$statusCode]\n${edge.toLogString}")
       Future.successful(true)
     } else {
-      logger.info(s">> acquireLock start")
+      logger.info(s"<< [acquireLock] enter")
       val p = Random.nextDouble()
       if (p < FailProb) throw new PartialFailureException(edge, 0, s"$p")
       else {
@@ -385,7 +408,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
             logger.debug(log)
           } else {
-            throw new PartialFailureException(edge, 0, "hbase fail.")
+            throw new PartialFailureException(edge, 0, "redis fail.")
           }
           true
         }
@@ -425,7 +448,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
             "\n"
           )
           logger.info(msg.mkString("\n"))
-          throw new PartialFailureException(edge, 3, "hbase fail.")
+          throw new PartialFailureException(edge, 3, "redis fail.")
         }
         true
       }
@@ -433,6 +456,8 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   }
 
   private def toPutRequest(snapshotEdge: SnapshotEdge): RedisPutRequest = {
+    logger.info(s"<< [toPutRequest] enter")
+    logger.info(s"<< [toPutRequest] build put request for snapshot edge")
     mutationBuilder.buildPutAsync(snapshotEdge).head.asInstanceOf[RedisPutRequest]
   }
 
@@ -440,6 +465,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
                            statusCode: Byte)(snapshotEdgeOpt: Option[Edge],
                                              kvOpt: Option[SKeyValue],
                                              edgeUpdate: EdgeMutate): Future[Boolean] = {
+    logger.info(s"<< [commitUpdate] enter")
     def oldBytes = kvOpt.map(_.value).getOrElse(Array.empty)
 
     def process(lockEdge: SnapshotEdge,
@@ -507,6 +533,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   private def mutateEdgesInner(edges: Seq[Edge],
                                checkConsistency: Boolean,
                                withWait: Boolean)(f: (Option[Edge], Seq[Edge]) => (Edge, EdgeMutate)): Future[Boolean] = {
+    logger.info(s"<< [mutateEdgesInner] enter")
     if (!checkConsistency) {
       val futures = edges.map { edge =>
         val (_, edgeUpdate) = f(None, Seq(edge))
