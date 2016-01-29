@@ -81,10 +81,17 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
     }
   }
 
+  def buildDeleteAsync(snapshotEdge: SnapshotEdge): Seq[RedisRPC] =
+    delete(storage.snapshotEdgeSerializer(snapshotEdge).toKeyValues)
 
-  def buildDeleteAsync(snapshotEdge: SnapshotEdge): Seq[RedisRPC] = ???
+  def buildDeleteAsync(indexedEdge: IndexEdge): Seq[RedisRPC] =
+    delete(storage.indexEdgeSerializer(indexedEdge).toKeyValues)
 
-  def buildDeleteAsync(vertex: Vertex): Seq[RedisRPC] = ???
+  def buildDeleteAsync(vertex: Vertex): Seq[RedisRPC] = {
+    val kvs = storage.vertexSerializer(vertex).toKeyValues
+    val kv = kvs.head
+    delete(Seq(kv.copy(qualifier = null)))
+  }
 
   def buildVertexPutsAsync(edge: Edge): Seq[RedisRPC] =
     if (edge.op == GraphUtil.operations("delete"))
@@ -92,8 +99,8 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
     else
       buildPutsAsync(edge.srcForVertex) ++ buildPutsAsync(edge.tgtForVertex)
 
-  def buildDeletesAsync(indexedEdge: IndexEdge): Seq[RedisRPC] = ???
-
+  def buildDeletesAsync(indexedEdge: IndexEdge): Seq[RedisRPC] =
+    delete(storage.indexEdgeSerializer(indexedEdge).toKeyValues)
   /** IndexEdge */
   def buildIncrementsAsync(indexedEdge: IndexEdge, amount: Long): Seq[RedisRPC] =
     storage.indexEdgeSerializer(indexedEdge).toKeyValues.headOption match {
@@ -104,8 +111,8 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
         increment(Seq(copiedKV))
     }
 
-
-  def snapshotEdgeMutations(edgeMutate: EdgeMutate): Seq[RedisRPC] = ???
+  def snapshotEdgeMutations(edgeMutate: EdgeMutate): Seq[RedisRPC] =
+    edgeMutate.newSnapshotEdge.map(e => buildPutAsync(e)).getOrElse(Nil)
 
   def buildIncrementsCountAsync(indexedEdge: IndexEdge, amount: Long): Seq[RedisRPC] =
     storage.indexEdgeSerializer(indexedEdge).toKeyValues.headOption match {

@@ -10,6 +10,7 @@ import com.typesafe.config.Config
 import org.apache.hadoop.hbase.util.Bytes
 
 import scala.collection.JavaConversions._
+import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Random, Success}
 
@@ -107,7 +108,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
             logger.info(s">> [writeToStorage] edge put : $p")
             if (jedis.zadd(p.key, RedisZsetScore, p.value) == 1) true else false
           case p: RedisPutRequest if p.qualifier.length == 0 => // Vertex put operation
-            logger.info(s">> [writeToStorage] vertex put : $p")
+            logger.info(s">> [writeToStorage] vertex put : ${p.toString}")
             if (jedis.zadd(p.key, RedisZsetScore, p.qualifier ++ p.value) == 1) true else false
           case i: RedisAtomicIncrementRequest =>
             logger.info(s">> [writeToStorage] Atomic increment : $i")
@@ -223,6 +224,32 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
     val vertexFuture = writeAsyncSimple(mutationBuilder.buildVertexPutsAsync(edge), withWait)
     Future.sequence(Seq(edgeFuture, vertexFuture)).map { rets => rets.forall(identity) }
+  }
+
+  override def mutateEdges(edges: Seq[Edge], withWait: Boolean): Future[Seq[Boolean]] = {
+    val edgeGrouped = edges.groupBy { edge => (edge.label, edge.srcVertex.innerId, edge.tgtVertex.innerId) } toSeq
+
+    val ret = edgeGrouped.map { case ((label, srcId, tgtId), edges) =>
+      if (edges.isEmpty) Future.successful(true)
+      else {
+        val head = edges.head
+        val strongConsistency = head.label.consistencyLevel == "strong"
+
+        if (strongConsistency) {
+          val edgeFuture = mutateEdgesInner(edges, strongConsistency, withWait)(Edge.buildOperation)
+          //TODO: decide what we will do on failure on vertex put
+          val vertexFuture = writeAsyncSimple(mutationBuilder.buildVertexPutsAsync(head), withWait)
+          Future.sequence(Seq(edgeFuture, vertexFuture)).map { rets => rets.forall(identity) }
+        } else {
+          Future.sequence(edges.map { edge =>
+            mutateEdge(edge, withWait = withWait)
+          }).map { rets =>
+            rets.forall(identity)
+          }
+        }
+      }
+    }
+    Future.sequence(ret)
   }
 
   private def writeAsyncSimple(rpcs: Seq[RedisRPC], withWait: Boolean): Future[Boolean] = {

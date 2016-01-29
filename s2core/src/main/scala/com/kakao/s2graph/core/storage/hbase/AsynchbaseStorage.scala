@@ -228,9 +228,15 @@ class AsynchbaseStorage(val config: Config, vertexCache: Cache[Integer, Option[V
   private def writeToStorage(_client: HBaseClient, rpc: HBaseRpc): Deferred[Boolean] = {
     //    logger.debug(s"$rpc")
     val defer = rpc match {
-      case d: DeleteRequest => _client.delete(d)
-      case p: PutRequest => _client.put(p)
-      case i: AtomicIncrementRequest => _client.bufferAtomicIncrement(i)
+      case d: DeleteRequest =>
+        logger.info(s">> [writeToStorage] delete: ${d.toString}")
+        _client.delete(d)
+      case p: PutRequest =>
+        logger.info(s">> [writeToStorage] put: ${p.toString}")
+        _client.put(p)
+      case i: AtomicIncrementRequest =>
+        logger.info(s">> [writeToStorage] increment: ${i.toString}")
+        _client.bufferAtomicIncrement(i)
     }
     defer withCallback { ret => true } recoverWith { ex =>
       logger.error(s"mutation failed. $rpc", ex)
