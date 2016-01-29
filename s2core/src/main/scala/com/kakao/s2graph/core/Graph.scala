@@ -252,7 +252,7 @@ object Graph {
   }
 
   def toGraphElement(s: String, labelMapping: Map[String, String] = Map.empty): Option[GraphElement] = Try {
-    println(s"<< [toGraphElement] $s")
+    logger.info(s"<< [toGraphElement] $s")
     val parts = GraphUtil.split(s)
     val logType = parts(2)
     val element = if (logType == "edge" | logType == "e") {
@@ -294,7 +294,7 @@ object Graph {
     val direction = if (tempDirection != "out" && tempDirection != "in") "out" else tempDirection
 
     val edge = Management.toEdge(ts.toLong, operation, srcId, tgtId, label, direction, props)
-    println(s"<< [toEdge] $edge")
+    logger.info(s"<< [toEdge] $edge")
     //            logger.debug(s"toEdge: $edge")
     Some(edge)
   } recover {
