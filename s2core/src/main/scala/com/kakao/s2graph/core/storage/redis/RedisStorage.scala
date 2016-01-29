@@ -101,10 +101,10 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
         val write = rpc match {
           case d: RedisDeleteRequest => if (jedis.zrem(d.key, d.value) == 1) true else false
           case p: RedisPutRequest if p.qualifier.length > 0 => // Edge put operation
-            println(s">> [writeToStorage] edge put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
+            logger.info(s">> [writeToStorage] edge put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
             if (jedis.zadd(p.key, RedisZsetScore, p.value) == 1) true else false
           case p: RedisPutRequest if p.qualifier.length == 0 => // Vertex put operation
-            println(s">> [writeToStorage] vertex put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
+            logger.info(s">> [writeToStorage] vertex put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
             if (jedis.zadd(p.key, RedisZsetScore, p.qualifier ++ p.value) == 1) true else false
           case i: RedisAtomicIncrementRequest =>
             logger.info(s">> [writeToStorage] Atomic increment : $i")
@@ -340,7 +340,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       logger.debug(s"skip mutate: [$statusCode]\n${edge.toLogString}")
       Future.successful(true)
     } else {
-      println(s"<< [mutate] enter")
+      logger.info(s"<< [mutate] enter")
       logger.info(s">> mutate start")
       val p = Random.nextDouble()
       if (p < FailProb) throw new PartialFailureException(edge, 1, s"$p")
@@ -385,7 +385,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       logger.debug(s"skip acquireLock: [$statusCode]\n${edge.toLogString}")
       Future.successful(true)
     } else {
-      println(s"<< [acquireLock] enter")
+      logger.info(s"<< [acquireLock] enter")
       val p = Random.nextDouble()
       if (p < FailProb) throw new PartialFailureException(edge, 0, s"$p")
       else {
@@ -456,8 +456,8 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   }
 
   private def toPutRequest(snapshotEdge: SnapshotEdge): RedisPutRequest = {
-    println(s"<< [toPutRequest] enter")
-    println(s"<< [toPutRequest] build put request for snapshot edge")
+    logger.info(s"<< [toPutRequest] enter")
+    logger.info(s"<< [toPutRequest] build put request for snapshot edge")
     mutationBuilder.buildPutAsync(snapshotEdge).head.asInstanceOf[RedisPutRequest]
   }
 
@@ -465,7 +465,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
                            statusCode: Byte)(snapshotEdgeOpt: Option[Edge],
                                              kvOpt: Option[SKeyValue],
                                              edgeUpdate: EdgeMutate): Future[Boolean] = {
-    println(s"<< [commitUpdate] enter")
+    logger.info(s"<< [commitUpdate] enter")
     def oldBytes = kvOpt.map(_.value).getOrElse(Array.empty)
 
     def process(lockEdge: SnapshotEdge,
@@ -533,7 +533,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   private def mutateEdgesInner(edges: Seq[Edge],
                                checkConsistency: Boolean,
                                withWait: Boolean)(f: (Option[Edge], Seq[Edge]) => (Edge, EdgeMutate)): Future[Boolean] = {
-    println(s"<< [mutateEdgesInner] enter")
+    logger.info(s"<< [mutateEdgesInner] enter")
     if (!checkConsistency) {
       val futures = edges.map { edge =>
         val (_, edgeUpdate) = f(None, Seq(edge))
