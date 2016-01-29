@@ -24,14 +24,14 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
   def incrementCount(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
       val offset = kv.value.length - 8
-      println(s">> [incrementCount] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
+      logger.info(s">> [incrementCount] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
       new RedisAtomicIncrementRequest(kv.row, kv.value, Bytes.toLong(kv.value, offset, 8), isDegree = false)
     }
 
   def increment(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
       val offset = kv.value.length - 8
-      println(s">> [increment] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
+      logger.info(s">> [increment] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
       new RedisAtomicIncrementRequest(kv.row, kv.value, Bytes.toLong(kv.value, offset, 8), isDegree = true)
     }
 
@@ -67,12 +67,12 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
         List.empty[RedisAtomicIncrementRequest]
       case (true, false) =>
 
-        println(s">> [increments] new edges and increase degree ")
+        logger.info(s">> [increments] new edges and increase degree ")
         /** no edges to delete but there is new edges to insert so increase degree by 1 */
         edgeMutate.edgesToInsert.flatMap { e => buildIncrementsAsync(e) }
       case (false, true) =>
 
-        println(s">> [increments] delete edges and increase degree ")
+        logger.info(s">> [increments] delete edges and increase degree ")
         /** no edges to insert but there is old edges to delete so decrease degree by 1 */
         edgeMutate.edgesToDelete.flatMap { e => buildIncrementsAsync(e, -1L) }
       case (false, false) =>
@@ -97,7 +97,7 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
 
   /** IndexEdge */
   def buildIncrementsAsync(indexedEdge: IndexEdge, amount: Long): Seq[RedisRPC] = {
-    println(s"<< [RedisMutationBuilder.buildIncrementsAsync] ")
+    logger.info(s"<< [RedisMutationBuilder.buildIncrementsAsync] ")
     storage.indexEdgeSerializer(indexedEdge).toKeyValues.headOption match {
       case None => Nil
       case Some(kv) =>
