@@ -61,7 +61,7 @@ case class RedisGetRequest(key: Array[Byte], isIncludeDegree: Boolean = true) ex
 
 case class RedisPutRequest(key: Array[Byte], qualifier: Array[Byte], value: Array[Byte], timestamp: Long) extends RedisRPC(key)
 
-case class RedisAtomicIncrementRequest(key: Array[Byte], value: Array[Byte], delta: Long, isDegree: Boolean = false) extends RedisRPC(key) {
+case class RedisAtomicIncrementRequest(key: Array[Byte], qualifier: Array[Byte] = null, value: Array[Byte], delta: Long, isDegree: Boolean = false) extends RedisRPC(key) {
   /**
    * For degree edge key(not sorted set key/value case)
    */
