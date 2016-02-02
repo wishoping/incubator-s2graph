@@ -135,12 +135,12 @@ case class Edge(srcVertex: Vertex,
   def props = propsWithTs.mapValues(_.innerVal)
 
   def relatedEdges = {
-    println(s"<< [Edge.relatedEdges] enter")
+    logger.info(s"<< [Edge.relatedEdges] enter")
     if (labelWithDir.isDirected) List(this, duplicateEdge)
     else {
       val outDir = labelWithDir.copy(dir = GraphUtil.directions("out"))
       val base = copy(labelWithDir = outDir)
-      println(s"\t<< [Edge.relatedEdges] given direction and reverse edge build")
+      logger.info(s"\t<< [Edge.relatedEdges] given direction and reverse edge build")
       List(base, base.reverseSrcTgtEdge)
     }
   }
@@ -319,7 +319,7 @@ object Edge extends JSONParser {
   def buildOperation(invertedEdge: Option[Edge], requestEdges: Seq[Edge]): (Edge, EdgeMutate) = {
     //            logger.debug(s"oldEdge: ${invertedEdge.map(_.toStringRaw)}")
     //            logger.debug(s"requestEdge: ${requestEdge.toStringRaw}")
-    println(s"<< [buildOperation]")
+    logger.info(s"<< [buildOperation]")
     val oldPropsWithTs =
       if (invertedEdge.isEmpty) Map.empty[Byte, InnerValLikeWithTs] else invertedEdge.get.propsWithTs
 
@@ -366,7 +366,7 @@ object Edge extends JSONParser {
       val propsWithTs = prevPropsWithTs ++
         Map(LabelMeta.timeStampSeq -> InnerValLikeWithTs(InnerVal.withLong(newTs, requestEdge.label.schemaVersion), newTs))
       val edgeMutate = buildMutation(invertedEdge, requestEdge, newVersion, oldPropsWithTs, propsWithTs)
-      println(s">> [buildOperation] edgeMutate: $edgeMutate")
+      logger.info(s">> [buildOperation] edgeMutate: $edgeMutate")
 
       //      logger.debug(s"${edgeMutate.toLogString}\n${propsWithTs}")
       //      logger.error(s"$propsWithTs")
@@ -379,7 +379,7 @@ object Edge extends JSONParser {
                     newVersion: Long,
                     oldPropsWithTs: Map[Byte, InnerValLikeWithTs],
                     newPropsWithTs: Map[Byte, InnerValLikeWithTs]): EdgeMutate = {
-    println(s"<< [buildMutation] enter")
+    logger.info(s"<< [buildMutation] enter")
     if (oldPropsWithTs == newPropsWithTs) {
       // all requests should be dropped. so empty mutation.
       //      logger.error(s"Case 1")
@@ -416,10 +416,10 @@ object Edge extends JSONParser {
             requestEdge.copy(version = newVersion, propsWithTs = newPropsWithTs, op = GraphUtil.defaultOpByte).
               relatedEdges.flatMap { relEdge => relEdge.edgesWithIndexValid }
 
-        println(s"\t<< [Edge.buildMutation] edgesToDelete : ${edgesToDelete.length}, edgesToInsert: ${edgesToInsert.length}")
-        println(s"\t\t<< [Edge.buildMutation] edgesToInsert list")
+        logger.info(s"\t<< [Edge.buildMutation] edgesToDelete : ${edgesToDelete.length}, edgesToInsert: ${edgesToInsert.length}")
+        logger.info(s"\t\t<< [Edge.buildMutation] edgesToInsert list")
         edgesToInsert.foreach{ i =>
-          println(s"\t\t\t<< [Edge.buildMutation] src[${i.srcVertex}] --> tgt[${i.tgtVertex}]")
+          logger.info(s"\t\t\t<< [Edge.buildMutation] src[${i.srcVertex}] --> tgt[${i.tgtVertex}]")
         }
 
         EdgeMutate(edgesToDelete = edgesToDelete, edgesToInsert = edgesToInsert, newSnapshotEdge = newSnapshotEdgeOpt)
@@ -493,7 +493,7 @@ object Edge extends JSONParser {
   }
 
   def mergeIncrement(propsPairWithTs: PropsPairWithTs): (State, Boolean) = {
-    println(s"<< [mergeIncrement]")
+    logger.info(s"<< [mergeIncrement]")
     var shouldReplace = false
     val (oldPropsWithTs, propsWithTs, requestTs, version) = propsPairWithTs
     val lastDeletedAt = oldPropsWithTs.get(LabelMeta.lastDeletedAt).map(v => v.ts).getOrElse(minTsVal)

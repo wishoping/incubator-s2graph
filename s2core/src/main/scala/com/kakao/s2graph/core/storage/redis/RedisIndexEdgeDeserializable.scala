@@ -3,6 +3,7 @@ package com.kakao.s2graph.core.storage.redis
 import com.kakao.s2graph.core.mysqls.LabelMeta
 import com.kakao.s2graph.core.storage.{SKeyValue, CanSKeyValue, StorageDeserializable}
 import com.kakao.s2graph.core.types._
+import com.kakao.s2graph.core.utils.logger
 import com.kakao.s2graph.core.{Vertex, GraphUtil, IndexEdge, QueryParam}
 import org.apache.hadoop.hbase.util.Bytes
 
@@ -52,9 +53,9 @@ class RedisIndexEdgeDeserializable extends StorageDeserializable[IndexEdge] {
     // skip first byte: qualifier length
     var pos = 1
     val (idxPropsRaw, tgtVertexIdRaw, tgtVertexIdLen, timestamp) = {
-      println(s">> [parseQualifier] key: ${GraphUtil.bytesToHexString(kv.row)}")
-      println(s">> [parseQualifier] qualifier: ${GraphUtil.bytesToHexString(kv.qualifier)}")
-      println(s">> [parseQualifier] value: ${GraphUtil.bytesToHexString(kv.value)}")
+      logger.info(s">> [parseQualifier] key: ${GraphUtil.bytesToHexString(kv.row)}")
+      logger.info(s">> [parseQualifier] qualifier: ${GraphUtil.bytesToHexString(kv.qualifier)}")
+      logger.info(s">> [parseQualifier] value: ${GraphUtil.bytesToHexString(kv.value)}")
       val (props, endAt) = bytesToProps(kv.value, pos, version)
       pos = endAt
       qualifierLen += endAt
