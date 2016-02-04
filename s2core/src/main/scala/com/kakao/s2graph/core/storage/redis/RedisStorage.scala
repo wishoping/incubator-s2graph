@@ -126,18 +126,11 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
         val script: String =
           """local key = KEYS[1]
-            |  local minMax = ARGV[1]
-            |  local oldData = ARGV[2]
-            |  local value = ARGV[3]
-            |  local score = ARGV[4]
-            |  local data = redis.call('ZRANGEBYLEX', key, minMax, minMax)[1]
-            |  if data == oldData then
-            |    redis.call('ZREM', key, data)
-            |    return redis.call('ZADD', key, score, value)
-            |  elseif data == nil then
-            |    return redis.call('ZADD', key, score, value)
-            |  end
-            |  return 0
+            |  local oldData = ARGV[1]
+            |  local value = ARGV[2]
+            |  local score = 1.0
+            |  redis.call('ZREM', key, oldData)
+            |  return redis.call('ZADD', key, score, value)
           """.stripMargin
 
 
@@ -148,12 +141,19 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
         } else {
           val keys = List[String](GraphUtil.bytesToHexString(putRequest.key))
           val minMax = "[" + GraphUtil.bytesToHexString(oldBytes)
-          val argv = List[String](minMax, GraphUtil.bytesToHexString(oldBytes), GraphUtil.bytesToHexString(putRequest.value), GraphUtil.bytesToHexString(Bytes.toBytes(RedisZsetScore)))
+//          val argv = List[String](minMax, GraphUtil.bytesToHexString(oldBytes), GraphUtil.bytesToHexString(putRequest.value), GraphUtil.bytesToHexString(Bytes.toBytes(RedisZsetScore)))
+          val argv = List[String](GraphUtil.bytesToHexString(oldBytes), GraphUtil.bytesToHexString(putRequest.value))
 
+          logger.info(s"%%%%% key: ${GraphUtil.bytesToHexString(putRequest.key)}")
+          logger.info(s"%%%%% minMax: ${minMax}")
+          logger.info(s"%%%%% oldBytes: ${GraphUtil.bytesToHexString(oldBytes)}")
+          logger.info(s"%%%%% value: ${GraphUtil.bytesToHexString(putRequest.value)}")
+          logger.info(s"%%%%% score: ${RedisZsetScore}")
           t.eval(script, keys, argv)
         }
 
-        t.exec()
+        val r = t.exec()
+        logger.info(s"%%%%% r: ${r.toString}")
         jedis.unwatch()
 
         true
