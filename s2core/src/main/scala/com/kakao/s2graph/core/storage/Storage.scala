@@ -72,10 +72,12 @@ abstract class Storage(implicit ec: ExecutionContext) {
                               parentEdges: Seq[EdgeWithScore]): Option[Edge] = {
     try {
       val indexEdge = indexEdgeDeserializer.fromKeyValues(queryParam, Seq(kv), queryParam.label.schemaVersion, cacheElementOpt)
+      logger.error(s">> toEdge : $indexEdge")
 
       Option(indexEdge.toEdge.copy(parentEdges = parentEdges))
     } catch {
       case ex: Exception =>
+        ex.printStackTrace()
         logger.error(s"Fail on toEdge: ${kv.toString}, ${queryParam}")
         None
     }

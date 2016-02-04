@@ -34,7 +34,7 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
     * Make Service, Label, Vertex for integrate test
     */
   def initTestData() = {
-    println("[init start]: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    logger.info("[init start]: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
     Management.deleteService(testServiceName)
 
     // 1. createService
@@ -44,7 +44,7 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
 
     val tryRes =
       Management.createService(serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm)
-    println(s">> Service created : $createService, $tryRes")
+    logger.info(s">> Service created : $createService, $tryRes")
 
     val labelNames = Map(testLabelName -> testLabelNameCreate,
       testLabelName2 -> testLabelName2Create,
@@ -65,7 +65,7 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
 
           tryRes.get
         case Some(label) =>
-          println(s">> Label already exist: $create, $label")
+          logger.info(s">> Label already exist: $create, $label")
       }
     }
 
@@ -75,7 +75,7 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
       Management.addVertexProp(testServiceName, testColumnName, key, keyType)
     }
 
-    println("[init end]: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    logger.info("[init end]: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
   }
 
 
@@ -127,6 +127,13 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
       val jsResult = PostProcess.toSimpleVertexArrJson(result)
 
       logger.info(jsResult.toString)
+      jsResult
+    }
+
+    def mutateEdgesSync(bulkEdges: String*) = {
+      val req = graph.mutateElements(parser.toGraphElements(bulkEdges.mkString("\n")), withWait = true)
+      val jsResult = Await.result(req, HttpRequestWaitingTime)
+
       jsResult
     }
 
