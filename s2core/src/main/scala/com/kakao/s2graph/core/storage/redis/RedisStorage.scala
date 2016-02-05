@@ -1,9 +1,9 @@
 package com.kakao.s2graph.core.storage.redis
 
 import com.google.common.cache.Cache
-import com.kakao.s2graph.core.GraphExceptions.{PartialFailureException, FetchTimeoutException}
+import com.kakao.s2graph.core.GraphExceptions.{FetchTimeoutException, PartialFailureException}
 import com.kakao.s2graph.core._
-import com.kakao.s2graph.core.mysqls.{LabelMeta, Label}
+import com.kakao.s2graph.core.mysqls.{Label, LabelMeta}
 import com.kakao.s2graph.core.storage._
 import com.kakao.s2graph.core.utils.{AsyncRedisClient, logger}
 import com.typesafe.config.Config
@@ -124,39 +124,33 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
         jedis.watch(putRequest.key)
 
 
+        // TODO: Reinforce LUA script for verifying old value and handling edge cases
         val script: String =
           """local key = KEYS[1]
             |  local oldData = ARGV[1]
             |  local value = ARGV[2]
             |  local score = 1.0
-            |  redis.call('ZREM', key, oldData)
-            |  return redis.call('ZADD', key, score, value)
+            |  if redis.call('ZREM', key, oldData) == 1 then
+            |    return tostring(redis.call('ZADD', key, score, value))
+            |  else
+            |    return "0"
+            |  end
+            |  return "0"
           """.stripMargin
 
-
         logger.info(s">> start compareAndSet")
-        val t = jedis.multi()
-        if (oldBytes.length == 0) {
-          t.zadd(putRequest.key, RedisZsetScore, putRequest.value)
+        val r = if (oldBytes.length == 0) {
+          jedis.zadd(putRequest.key, RedisZsetScore, putRequest.value)
         } else {
-          val keys = List[String](GraphUtil.bytesToHexString(putRequest.key))
-          val minMax = "[" + GraphUtil.bytesToHexString(oldBytes)
-//          val argv = List[String](minMax, GraphUtil.bytesToHexString(oldBytes), GraphUtil.bytesToHexString(putRequest.value), GraphUtil.bytesToHexString(Bytes.toBytes(RedisZsetScore)))
-          val argv = List[String](GraphUtil.bytesToHexString(oldBytes), GraphUtil.bytesToHexString(putRequest.value))
-
-          logger.info(s"%%%%% key: ${GraphUtil.bytesToHexString(putRequest.key)}")
-          logger.info(s"%%%%% minMax: ${minMax}")
-          logger.info(s"%%%%% oldBytes: ${GraphUtil.bytesToHexString(oldBytes)}")
-          logger.info(s"%%%%% value: ${GraphUtil.bytesToHexString(putRequest.value)}")
-          logger.info(s"%%%%% score: ${RedisZsetScore}")
-          t.eval(script, keys, argv)
+          val keys = List[Array[Byte]](putRequest.key)
+          val argv = List[Array[Byte]](oldBytes, putRequest.value)
+          jedis.eval(script.getBytes, keys, argv)
         }
 
-        val r = t.exec()
-        logger.info(s"%%%%% r: ${r.toString}")
         jedis.unwatch()
+        logger.info(s">> cas result: ${r}")
+        r.equals("1")
 
-        true
       } match {
         case Success(v) =>
           logger.info(s">> success compareAndSet : $v")
