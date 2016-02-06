@@ -127,16 +127,23 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
         // TODO: Reinforce LUA script for verifying old value and handling edge cases
         val script: String =
           """local key = KEYS[1]
-            |  local oldData = ARGV[1]
-            |  local value = ARGV[2]
-            |  local score = 1.0
-            |  if redis.call('ZREM', key, oldData) == 1 then
-            |    return tostring(redis.call('ZADD', key, score, value))
-            |  else
-            |    return "0"
-            |  end
-            |  return "0"
+            |local oldData = ARGV[1]
+            |local value = ARGV[2]
+            |local score = 1.0
+            |local minMax = "[" .. oldData
+            |local data = redis.call('ZRANGEBYLEX', key, minMax, minMax)
+            |return data
           """.stripMargin
+//            |if data == oldData then
+//            |  if redis.call('ZREM', key, oldData) == 1 then
+//            |    return tostring(redis.call('ZADD', key, score, value))
+//            |  else
+//            |    return "0"
+//            |  end
+//            |elseif data == nil then
+//            |  return tostring(redis.call('ZADD', key, score, value))
+//            |end
+//          """.stripMargin
 
         logger.info(s">> start compareAndSet")
         val r = if (oldBytes.length == 0) {
@@ -149,7 +156,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
         jedis.unwatch()
         logger.info(s">> cas result: ${r}")
-        r.equals("1")
+        r.toString.equals("1")
 
       } match {
         case Success(v) =>
