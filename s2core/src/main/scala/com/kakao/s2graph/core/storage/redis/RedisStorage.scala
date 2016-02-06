@@ -131,19 +131,18 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
             |local value = ARGV[2]
             |local score = 1.0
             |local minMax = "[" .. oldData
-            |local data = redis.call('ZRANGEBYLEX', key, minMax, minMax)
-            |return data
+            |local data = redis.call('ZRANGEBYLEX', key, minMax, minMax)[1]
+            |if data == oldData then
+            |  if redis.call('ZREM', key, oldData) == 1 then
+            |    return redis.call('ZADD', key, score, value)
+            |  else
+            |    return 0
+            |  end
+            |elseif data == nil then
+            |  return redis.call('ZADD', key, score, value)
+            |end
+            |return 0
           """.stripMargin
-//            |if data == oldData then
-//            |  if redis.call('ZREM', key, oldData) == 1 then
-//            |    return tostring(redis.call('ZADD', key, score, value))
-//            |  else
-//            |    return "0"
-//            |  end
-//            |elseif data == nil then
-//            |  return tostring(redis.call('ZADD', key, score, value))
-//            |end
-//          """.stripMargin
 
         logger.info(s">> start compareAndSet")
         val r = if (oldBytes.length == 0) {
