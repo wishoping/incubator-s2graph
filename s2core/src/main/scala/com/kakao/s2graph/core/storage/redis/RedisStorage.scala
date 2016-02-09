@@ -199,35 +199,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
   override def deleteAllAdjacentEdges(srcVertices: List[Vertex], labels: Seq[Label], dir: Int, ts: Long): Future[Boolean] = ???
 
-  override def incrementCounts(edges: Seq[Edge]): Future[Seq[(Boolean, Long)]] = {
-    val defers: Seq[Future[(Boolean, Long)]] = for {
-      edge <- edges
-    } yield {
-      Future {
-        val edgeWithIndex = edge.edgesWithIndex.head
-        val countWithTs = edge.propsWithTs(LabelMeta.countSeq)
-        val countVal = countWithTs.innerVal.toString().toLong
-        val incr = mutationBuilder.buildIncrementsCountAsync(edgeWithIndex, countVal).head
-        val request = incr.asInstanceOf[RedisAtomicIncrementRequest]
-        client.doBlockWithKey[(Boolean, Long)]("" /* shard key */) { jedis =>
-          jedis.watch(request.key)
-
-          jedis.incrBy(request.key, request.delta)
-
-          jedis.unwatch()
-          (true, request.delta)
-        } match {
-          case Success(v) =>
-            v
-          case Failure(e) =>
-            logger.error(s"mutation failed. $request", e)
-            (false, -1l)
-        }
-      }
-    }
-
-    Future.sequence(defers)
-  }
+  override def incrementCounts(edges: Seq[Edge]): Future[Seq[(Boolean, Long)]] = ???
 
   override def mutateVertex(vertex: Vertex, withWait: Boolean): Future[Boolean] = ???
 
