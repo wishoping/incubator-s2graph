@@ -1,5 +1,7 @@
 package com.kakao.s2graph.core.storage.redis
 
+import java.util
+
 import com.google.common.cache.Cache
 import com.kakao.s2graph.core.GraphExceptions.{FetchTimeoutException, PartialFailureException}
 import com.kakao.s2graph.core._
@@ -8,9 +10,11 @@ import com.kakao.s2graph.core.storage._
 import com.kakao.s2graph.core.utils.{AsyncRedisClient, logger}
 import com.typesafe.config.Config
 import org.apache.hadoop.hbase.util.Bytes
+import org.hbase.async.KeyValue
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.hashing.MurmurHash3
 import scala.util.{Failure, Random, Success}
 
 /**
@@ -32,6 +36,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   val FailProb = config.getDouble("hbase.fail.prob")
   val LockExpireDuration = Math.max(MaxRetryNum * MaxBackOff * 2, 10000)
   val RedisZsetScore = 1
+  val emptyKVs = new util.ArrayList[KeyValue]()
 
   val snapshotEdgeDeserializer = new RedisSnapshotEdgeDeserializable
   val indexEdgeDeserializer = new RedisIndexEdgeDeserializable
@@ -582,5 +587,40 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   }
 
 
-  override def getVertices(vertices: Seq[Vertex]): Future[Seq[Vertex]] = ???
+  def getVertices(vertices: Seq[Vertex]): Future[Seq[Vertex]] = {
+    def fromResult(queryParam: QueryParam,
+                   kvs: Seq[SKeyValue],
+                   version: String): Option[Vertex] = {
+
+      if (kvs.isEmpty) None
+      else {
+        val newKVs = kvs
+        Option(vertexDeserializer.fromKeyValues(queryParam, newKVs, version, None))
+      }
+    }
+
+    val futures = vertices.map { vertex =>
+      val kvs = vertexSerializer(vertex).toKeyValues
+      val get = new RedisGetRequest(kvs.head.row, false)
+
+      val cacheKey = MurmurHash3.stringHash(get.toString)
+      val cacheVal = vertexCache.getIfPresent(cacheKey)
+      if (cacheVal == null) {
+        val result = client.doBlockWithKey[Set[SKeyValue]]("" /* sharding key */) { jedis =>
+          jedis.zrangeByLex(get.key, get.min, get.max, get.offset, get.count).toSet[Array[Byte]].map(v =>
+            SKeyValue(Array.empty[Byte], get.key, Array.empty[Byte], Array.empty[Byte], v, 0L)
+          )
+        } match {
+          case Success(v) => v
+          case Failure(e) => Set[SKeyValue]()
+        }
+        val fetchVal = fromResult(QueryParam.Empty, result.toSeq, vertex.serviceColumn.schemaVersion)
+        Future.successful(fetchVal)
+      }
+
+      else Future.successful(cacheVal)
+    }
+
+    Future.sequence(futures).map { result => result.toList.flatten }
+  }
 }
