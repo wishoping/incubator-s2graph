@@ -1,9 +1,9 @@
 package com.kakao.s2graph.core.storage.redis
 
 import com.google.common.cache.Cache
-import com.kakao.s2graph.core.GraphExceptions.{PartialFailureException, FetchTimeoutException}
+import com.kakao.s2graph.core.GraphExceptions.{FetchTimeoutException, PartialFailureException}
 import com.kakao.s2graph.core._
-import com.kakao.s2graph.core.mysqls.{LabelMeta, Label}
+import com.kakao.s2graph.core.mysqls.{Label, LabelMeta}
 import com.kakao.s2graph.core.storage._
 import com.kakao.s2graph.core.utils.{AsyncRedisClient, logger}
 import com.typesafe.config.Config
@@ -124,39 +124,39 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
         jedis.watch(putRequest.key)
 
 
+        // TODO: Reinforce LUA script for verifying old value and handling edge cases
         val script: String =
           """local key = KEYS[1]
-            |  local minMax = ARGV[1]
-            |  local oldData = ARGV[2]
-            |  local value = ARGV[3]
-            |  local score = ARGV[4]
-            |  local data = redis.call('ZRANGEBYLEX', key, minMax, minMax)[1]
-            |  if data == oldData then
-            |    redis.call('ZREM', key, data)
+            |local oldData = ARGV[1]
+            |local value = ARGV[2]
+            |local score = 1.0
+            |local minMax = "[" .. oldData
+            |local data = redis.call('ZRANGEBYLEX', key, minMax, minMax)[1]
+            |if data == oldData then
+            |  if redis.call('ZREM', key, oldData) == 1 then
             |    return redis.call('ZADD', key, score, value)
-            |  elseif data == nil then
-            |    return redis.call('ZADD', key, score, value)
+            |  else
+            |    return 0
             |  end
-            |  return 0
+            |elseif data == nil then
+            |  return redis.call('ZADD', key, score, value)
+            |end
+            |return 0
           """.stripMargin
 
-
         logger.info(s">> start compareAndSet")
-        val t = jedis.multi()
-        if (oldBytes.length == 0) {
-          t.zadd(putRequest.key, RedisZsetScore, putRequest.value)
+        val r = if (oldBytes.length == 0) {
+          jedis.zadd(putRequest.key, RedisZsetScore, putRequest.value)
         } else {
-          val keys = List[String](GraphUtil.bytesToHexString(putRequest.key))
-          val minMax = "[" + GraphUtil.bytesToHexString(oldBytes)
-          val argv = List[String](minMax, GraphUtil.bytesToHexString(oldBytes), GraphUtil.bytesToHexString(putRequest.value), GraphUtil.bytesToHexString(Bytes.toBytes(RedisZsetScore)))
-
-          t.eval(script, keys, argv)
+          val keys = List[Array[Byte]](putRequest.key)
+          val argv = List[Array[Byte]](oldBytes, putRequest.value)
+          jedis.eval(script.getBytes, keys, argv)
         }
 
-        t.exec()
         jedis.unwatch()
+        logger.info(s">> cas result: ${r}")
+        r.toString.equals("1")
 
-        true
       } match {
         case Success(v) =>
           logger.info(s">> success compareAndSet : $v")
