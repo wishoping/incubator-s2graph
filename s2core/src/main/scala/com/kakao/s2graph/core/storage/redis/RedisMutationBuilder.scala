@@ -26,7 +26,7 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
   def increment(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
       val offset = kv.value.length - 8
-      println(s">> [increment] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
+      logger.info(s">> [increment] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
       new RedisAtomicIncrementRequest(kv.row, kv.value, kv.qualifier, Bytes.toLong(kv.value, offset, 8), isDegree = true)
     }
 
