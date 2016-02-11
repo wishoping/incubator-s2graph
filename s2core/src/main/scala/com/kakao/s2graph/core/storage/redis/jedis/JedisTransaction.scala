@@ -8,15 +8,12 @@ import redis.clients.jedis._
   */
 class JedisTransaction(passClient: Client) extends Transaction(passClient) {
 
-  // The reason why I use empty string as a paramter that Transaction's getClient function's parameter is useless.
-//  this.client = passClient
-
-  def eval(script: Array[Byte], keys: List[Array[Byte]], args: List[Array[Byte]]): Response[java.lang.Long] = {
+  def evalWithLong(script: Array[Byte], keys: List[Array[Byte]], args: List[Array[Byte]]): Response[java.lang.Long] = {
     val params: Array[Array[Byte]] = (keys ++ args).toArray
 
     getClient(script).eval(script, Protocol.toByteArray(keys.length), params)
 
-    return getResponse(BuilderFactory.LONG);
+    return getResponse(BuilderFactory.LONG)
   }
 
 }

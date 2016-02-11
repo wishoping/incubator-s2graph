@@ -130,7 +130,6 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
 
         try {
-          // TODO: Reinforce LUA script for verifying old value and handling edge cases
           val script: String =
             """local key = KEYS[1]
               |local oldData = ARGV[1]
@@ -156,7 +155,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
           } else {
             val keys = List[Array[Byte]](putRequest.key)
             val argv = List[Array[Byte]](oldBytes, putRequest.value)
-            transaction.eval(script.getBytes, keys, argv)
+            transaction.evalWithLong(script.getBytes, keys, argv)
           }
 
           val r = transaction.exec()
