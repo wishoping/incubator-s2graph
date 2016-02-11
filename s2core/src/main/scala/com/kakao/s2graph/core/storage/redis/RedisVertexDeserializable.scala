@@ -29,19 +29,23 @@ class RedisVertexDeserializable extends StorageDeserializable[Vertex]{
     for {
       kv <- kvs
     } {
-      val propKey = Bytes.toInt(kv.qualifier)
+      var offset = 0
+      val propKey = Bytes.toInt(kv.value)
+      offset += 4
       // TODO :: What the...
       //        if (kv.qualifier.length == 1) kv.qualifier.head.toInt
       //        else Bytes.toInt(kv.qualifier)
 
-      val ts = kv.timestamp
+//      val ts = kv.timestamp
+      val ts = Bytes.toLong(kv.value, offset, 8)
+      // read Long value
+      offset += 8
       if (ts > maxTs) maxTs = ts
 
       if (Vertex.isLabelId(propKey)) {
         belongLabelIds += Vertex.toLabelId(propKey)
       } else {
-        val v = kv.value
-        val (value, _) = InnerVal.fromBytes(v, 0, v.length, version)
+        val (value, _) = InnerVal.fromBytes(kv.value, offset, kv.value.length, version)
         propsMap += (propKey -> value)
       }
     }

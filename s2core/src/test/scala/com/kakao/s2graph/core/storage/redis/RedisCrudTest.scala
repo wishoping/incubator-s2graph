@@ -99,7 +99,6 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
        """.stripMargin
     )
 
-    logger.info("1111")
     def querySingle(id: Int, offset: Int = 0, limit: Int = 10) = Json.parse(
       s"""
          |{
@@ -119,7 +118,6 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
          |}
        """.stripMargin
     )
-    logger.info("2222")
 
     var result = checkEdgesSync(queryCheckEdges(1, 1000))
     logger.info(result.toString())
@@ -134,6 +132,15 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
     (result \ "size").toString should be("1") // edge 1 -> 2000 should be present
   }
 
+  test("get vertex") {
+    val ids = Array(1, 2, 1000, 2000)
+    val q = vertexQueryJson(testServiceName, testColumnName, ids)
+    logger.info("vertex get query: " + q.toString())
+
+    val rs = getVerticesSync(q)
+    logger.info("vertex get result: " + rs.toString())
+    rs.as[Array[JsValue]].size should be (4)
+  }
   test("test increment") {
     val incrementVal = 10
     mutateEdgesSync(
@@ -168,6 +175,5 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
     val result = (resp \\ "results" ).head(0)
     (result \ "props" \ "weight" ).toString should be (s"$incrementVal")  // edge 1 -> 1000 should be present
   }
-
 
 }

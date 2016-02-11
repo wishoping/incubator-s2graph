@@ -107,10 +107,10 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       client.doBlockWithKey[Boolean]("" /* sharding key */) { jedis =>
         val write = rpc match {
           case d: RedisDeleteRequest => if (jedis.zrem(d.key, d.value) == 1) true else false
-          case p: RedisPutRequest if p.qualifier.length > 0 => // Edge put operation
+          case p: RedisPutRequest if p.qualifier.length == 0 => // Edge put operation
             logger.info(s">> [writeToStorage] edge put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
             if (jedis.zadd(p.key, RedisZsetScore, p.value) == 1) true else false
-          case p: RedisPutRequest if p.qualifier.length == 0 => // Vertex put operation
+          case p: RedisPutRequest if p.qualifier.length > 0 => // Vertex put operation
             logger.info(s">> [writeToStorage] vertex put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
             if (jedis.zadd(p.key, RedisZsetScore, p.qualifier ++ p.value) == 1) true else false
           case i: RedisAtomicIncrementRequest =>
@@ -631,12 +631,12 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
       if (kvs.isEmpty) None
       else {
-        val newKVs = kvs
-        Option(vertexDeserializer.fromKeyValues(queryParam, newKVs, version, None))
+        Option(vertexDeserializer.fromKeyValues(queryParam, kvs, version, None))
       }
     }
 
     val futures = vertices.map { vertex =>
+      logger.info(s"vertices: ${vertex.toLogString()}")
       val kvs = vertexSerializer(vertex).toKeyValues
       val get = new RedisGetRequest(kvs.head.row, false)
 
@@ -644,12 +644,22 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       val cacheVal = vertexCache.getIfPresent(cacheKey)
       if (cacheVal == null) {
         val result = client.doBlockWithKey[Set[SKeyValue]]("" /* sharding key */) { jedis =>
+          get.setCount(get.MaxPropNum)
+            .setFilter("-".getBytes, true, "+".getBytes, true)
+          logger.info(s"key: ${GraphUtil.bytesToHexString(get.key)}")
+          logger.info(s"min: ${GraphUtil.bytesToHexString(get.min)}")
+          logger.info(s"max: ${GraphUtil.bytesToHexString(get.max)}")
+          logger.info(s"offset: ${get.offset}")
+          logger.info(s"count: ${get.count}")
           jedis.zrangeByLex(get.key, get.min, get.max, get.offset, get.count).toSet[Array[Byte]].map(v =>
             SKeyValue(Array.empty[Byte], get.key, Array.empty[Byte], Array.empty[Byte], v, 0L)
           )
         } match {
-          case Success(v) => v
-          case Failure(e) => Set[SKeyValue]()
+          case Success(v) =>
+            v
+          case Failure(e) =>
+            logger.error(s"Redis vertex get fail: ", e)
+            Set[SKeyValue]()
         }
         val fetchVal = fromResult(QueryParam.Empty, result.toSeq, vertex.serviceColumn.schemaVersion)
         Future.successful(fetchVal)

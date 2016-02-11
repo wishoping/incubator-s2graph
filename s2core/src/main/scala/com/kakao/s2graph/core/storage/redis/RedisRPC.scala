@@ -21,6 +21,9 @@ case class RedisGetRequest(key: Array[Byte], isIncludeDegree: Boolean = true) ex
    */
   lazy val degreeEdgeKey = Bytes.add(key, RedisRPC.DEGREE_EDGE_POSTFIX_BYTE)
 
+  // Todo: Not sure if limiting the number of properties is the right approach..
+  lazy val MaxPropNum = 100
+
   var timeout: Long = _
   var count: Int = _
   var offset: Int = _
