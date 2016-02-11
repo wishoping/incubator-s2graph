@@ -1,10 +1,13 @@
 package com.kakao.s2graph.core.storage.redis
 
+import _root_.redis.clients.jedis.Protocol
+import _root_.redis.clients.util.SafeEncoder
 import com.google.common.cache.Cache
 import com.kakao.s2graph.core.GraphExceptions.{FetchTimeoutException, PartialFailureException}
 import com.kakao.s2graph.core._
 import com.kakao.s2graph.core.mysqls.{Label, LabelMeta}
 import com.kakao.s2graph.core.storage._
+import com.kakao.s2graph.core.storage.redis.jedis.JedisTransaction
 import com.kakao.s2graph.core.utils.{AsyncRedisClient, logger}
 import com.typesafe.config.Config
 import org.apache.hadoop.hbase.util.Bytes
@@ -122,41 +125,50 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
     Future[Boolean] {
       client.doBlockWithKey[Boolean]("" /* shard key */) { jedis =>
         jedis.watch(putRequest.key)
+        jedis.getClient.multi()
+        val transaction = new JedisTransaction(jedis.getClient)
 
 
-        // TODO: Reinforce LUA script for verifying old value and handling edge cases
-        val script: String =
-          """local key = KEYS[1]
-            |local oldData = ARGV[1]
-            |local value = ARGV[2]
-            |local score = 1.0
-            |local minMax = "[" .. oldData
-            |local data = redis.call('ZRANGEBYLEX', key, minMax, minMax)[1]
-            |if data == oldData then
-            |  if redis.call('ZREM', key, oldData) == 1 then
-            |    return redis.call('ZADD', key, score, value)
-            |  else
-            |    return 0
-            |  end
-            |elseif data == nil then
-            |  return redis.call('ZADD', key, score, value)
-            |end
-            |return 0
-          """.stripMargin
+        try {
+          val script: String =
+            """local key = KEYS[1]
+              |local oldData = ARGV[1]
+              |local value = ARGV[2]
+              |local score = 1.0
+              |local minMax = "[" .. oldData
+              |local data = redis.call('ZRANGEBYLEX', key, minMax, minMax)[1]
+              |if data == oldData then
+              |  if redis.call('ZREM', key, oldData) == 1 then
+              |    return redis.call('ZADD', key, score, value)
+              |  else
+              |    return 0
+              |  end
+              |elseif data == nil then
+              |  return redis.call('ZADD', key, score, value)
+              |end
+              |return 0
+            """.stripMargin
 
-        logger.info(s">> start compareAndSet")
-        val r = if (oldBytes.length == 0) {
-          jedis.zadd(putRequest.key, RedisZsetScore, putRequest.value)
-        } else {
-          val keys = List[Array[Byte]](putRequest.key)
-          val argv = List[Array[Byte]](oldBytes, putRequest.value)
-          jedis.eval(script.getBytes, keys, argv)
+          logger.info(s">> start compareAndSet")
+          if (oldBytes.length == 0) {
+            transaction.zadd(putRequest.key, RedisZsetScore, putRequest.value)
+          } else {
+            val keys = List[Array[Byte]](putRequest.key)
+            val argv = List[Array[Byte]](oldBytes, putRequest.value)
+            transaction.evalWithLong(script.getBytes, keys, argv)
+          }
+
+          val r = transaction.exec()
+          jedis.unwatch()
+
+          logger.info(s">> cas result: ${r}")
+          r.toString.equals("[1]")
+
+        } catch {
+          case e: Throwable =>
+            transaction.discard()
+            false
         }
-
-        jedis.unwatch()
-        logger.info(s">> cas result: ${r}")
-        r.toString.equals("1")
-
       } match {
         case Success(v) =>
           logger.info(s">> success compareAndSet : $v")
