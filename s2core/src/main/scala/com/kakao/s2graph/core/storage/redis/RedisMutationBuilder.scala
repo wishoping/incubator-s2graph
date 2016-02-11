@@ -21,20 +21,14 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
     if ( tmp.isEmpty ) "" else "\\x" + tmp
   }
 
-  def incrementCount(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
-    kvs.map { kv =>
-      val offset = kv.value.length - 8
-      logger.info(s">> [incrementCount] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
-      new RedisAtomicIncrementRequest(kv.row, kv.value, Bytes.toLong(kv.value, offset, 8), isDegree = false)
-    }
+  def incrementCount(kvs: Seq[SKeyValue]): Seq[RedisRPC] = ???
 
   def increment(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
       val offset = kv.value.length - 8
       logger.info(s">> [increment] len: ${kv.value.length} value : ${toHex(kv.value)}, offset: $offset")
-      new RedisAtomicIncrementRequest(kv.row, kv.value, Bytes.toLong(kv.value, offset, 8), isDegree = true)
+      new RedisAtomicIncrementRequest(kv.row, kv.value, kv.qualifier, Bytes.toLong(kv.value, offset, 8), isDegree = true)
     }
-
 
   def delete(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
@@ -102,6 +96,7 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
 
   def buildDeletesAsync(indexedEdge: IndexEdge): Seq[RedisRPC] =
     delete(storage.indexEdgeSerializer(indexedEdge).toKeyValues)
+
   /** IndexEdge */
   def buildIncrementsAsync(indexedEdge: IndexEdge, amount: Long): Seq[RedisRPC] = {
     logger.info(s"<< [RedisMutationBuilder.buildIncrementsAsync] ")

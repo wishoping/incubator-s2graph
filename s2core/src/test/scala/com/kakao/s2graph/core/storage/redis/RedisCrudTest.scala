@@ -134,7 +134,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
     (result \ "size").toString should be("1") // edge 1 -> 2000 should be present
   }
 
-  test("test incrementCount") {
+  test("test increment") {
     val incrementVal = 10
     mutateEdgesSync(
       toEdge(1, increment, e, 3, 4, testLabelName2, "{\"weight\":%s}".format(incrementVal), "out")

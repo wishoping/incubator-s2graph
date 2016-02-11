@@ -67,10 +67,7 @@ case class RedisPutRequest(key: Array[Byte], qualifier: Array[Byte], value: Arra
   override val toString = s"key: $k, qualifier: $q, value: $v, ts: $timestamp"
 }
 
-case class RedisAtomicIncrementRequest(key: Array[Byte], value: Array[Byte], delta: Long, isDegree: Boolean = false) extends RedisRPC(key) {
-  val k = GraphUtil.bytesToHexString(key)
-  val v = GraphUtil.bytesToHexString(value)
-  override val toString = s"key: $k, value: $v, delta: $delta, isDegree: $isDegree"
+case class RedisAtomicIncrementRequest(key: Array[Byte], qualifier: Array[Byte] = null, value: Array[Byte], delta: Long, isDegree: Boolean = false) extends RedisRPC(key) {
   /**
    * For degree edge key(not sorted set key/value case)
    */
