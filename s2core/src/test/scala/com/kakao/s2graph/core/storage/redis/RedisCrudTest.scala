@@ -133,7 +133,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
   }
 
   test("get vertex") {
-    val ids = Array(1, 2, 1000, 2000)
+    val ids = Array(1, 2)
     val q = vertexQueryJson(testServiceName, testColumnName, ids)
     logger.info("vertex get query: " + q.toString())
 
