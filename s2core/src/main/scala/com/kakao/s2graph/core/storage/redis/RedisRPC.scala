@@ -21,9 +21,6 @@ case class RedisGetRequest(key: Array[Byte], isIncludeDegree: Boolean = true) ex
    */
   lazy val degreeEdgeKey = Bytes.add(key, RedisRPC.DEGREE_EDGE_POSTFIX_BYTE)
 
-  // Todo: Not sure if limiting the number of properties is the right approach..
-  lazy val MaxPropNum = 100
-
   var timeout: Long = _
   var count: Int = _
   var offset: Int = _
@@ -64,9 +61,9 @@ case class RedisGetRequest(key: Array[Byte], isIncludeDegree: Boolean = true) ex
 }
 
 case class RedisPutRequest(key: Array[Byte], qualifier: Array[Byte], value: Array[Byte], timestamp: Long) extends RedisRPC(key) {
-  val k = GraphUtil.bytesToHexString(key)
-  val q = GraphUtil.bytesToHexString(qualifier)
-  val v = GraphUtil.bytesToHexString(value)
+  lazy val k = GraphUtil.bytesToHexString(key)
+  lazy val q = GraphUtil.bytesToHexString(qualifier)
+  lazy val v = GraphUtil.bytesToHexString(value)
   override val toString = s"key: $k, qualifier: $q, value: $v, ts: $timestamp"
 }
 
@@ -78,8 +75,8 @@ case class RedisAtomicIncrementRequest(key: Array[Byte], qualifier: Array[Byte] 
 }
 
 case class RedisDeleteRequest(key: Array[Byte], value: Array[Byte], timestamp: Long) extends RedisRPC(key) {
-  val k = GraphUtil.bytesToHexString(key)
-  val v = GraphUtil.bytesToHexString(value)
+  lazy val k = GraphUtil.bytesToHexString(key)
+  lazy val v = GraphUtil.bytesToHexString(value)
   override val toString = s"key: $k, value: $v, ts: $timestamp"
 }
 

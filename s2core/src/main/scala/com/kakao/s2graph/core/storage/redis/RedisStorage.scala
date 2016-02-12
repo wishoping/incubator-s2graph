@@ -644,14 +644,13 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       val cacheVal = vertexCache.getIfPresent(cacheKey)
       if (cacheVal == null) {
         val result = client.doBlockWithKey[Set[SKeyValue]]("" /* sharding key */) { jedis =>
-          get.setCount(get.MaxPropNum)
-            .setFilter("-".getBytes, true, "+".getBytes, true)
+          get.setFilter("-".getBytes, true, "+".getBytes, true)
           logger.info(s"key: ${GraphUtil.bytesToHexString(get.key)}")
           logger.info(s"min: ${GraphUtil.bytesToHexString(get.min)}")
           logger.info(s"max: ${GraphUtil.bytesToHexString(get.max)}")
           logger.info(s"offset: ${get.offset}")
           logger.info(s"count: ${get.count}")
-          jedis.zrangeByLex(get.key, get.min, get.max, get.offset, get.count).toSet[Array[Byte]].map(v =>
+          jedis.zrangeByLex(get.key, get.min, get.max).toSet[Array[Byte]].map(v =>
             SKeyValue(Array.empty[Byte], get.key, Array.empty[Byte], Array.empty[Byte], v, 0L)
           )
         } match {

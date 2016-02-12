@@ -139,7 +139,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
 
     val rs = getVerticesSync(q)
     logger.info("vertex get result: " + rs.toString())
-    rs.as[Array[JsValue]].size should be (4)
+    rs.as[Array[JsValue]].size should be (2)
   }
   test("test increment") {
     val incrementVal = 10
