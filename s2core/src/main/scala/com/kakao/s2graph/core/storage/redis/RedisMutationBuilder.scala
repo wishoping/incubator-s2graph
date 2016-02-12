@@ -30,7 +30,6 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
       new RedisAtomicIncrementRequest(kv.row, kv.value, kv.qualifier, Bytes.toLong(kv.value, offset, 8), isDegree = true)
     }
 
-
   def delete(kvs: Seq[SKeyValue]): Seq[RedisRPC] =
     kvs.map { kv =>
       if (kv.qualifier == null) new RedisDeleteRequest(kv.row, kv.value, kv.timestamp)
@@ -77,9 +76,11 @@ class RedisMutationBuilder(storage: RedisStorage)(implicit ec: ExecutionContext)
     }
   }
 
-
   def buildDeleteAsync(snapshotEdge: SnapshotEdge): Seq[RedisRPC] =
     delete(storage.snapshotEdgeSerializer(snapshotEdge).toKeyValues)
+
+  def buildDeleteAsync(indexedEdge: IndexEdge): Seq[RedisRPC] =
+    delete(storage.indexEdgeSerializer(indexedEdge).toKeyValues)
 
   def buildDeleteAsync(vertex: Vertex): Seq[RedisRPC] = {
     val kvs = storage.vertexSerializer(vertex).toKeyValues

@@ -1,5 +1,6 @@
 package com.kakao.s2graph.core.storage.redis
 
+import com.kakao.s2graph.core.GraphUtil
 import org.apache.hadoop.hbase.util.Bytes
 
 /**
@@ -59,7 +60,12 @@ case class RedisGetRequest(key: Array[Byte], isIncludeDegree: Boolean = true) ex
 
 }
 
-case class RedisPutRequest(key: Array[Byte], qualifier: Array[Byte], value: Array[Byte], timestamp: Long) extends RedisRPC(key)
+case class RedisPutRequest(key: Array[Byte], qualifier: Array[Byte], value: Array[Byte], timestamp: Long) extends RedisRPC(key) {
+  lazy val k = GraphUtil.bytesToHexString(key)
+  lazy val q = GraphUtil.bytesToHexString(qualifier)
+  lazy val v = GraphUtil.bytesToHexString(value)
+  override val toString = s"key: $k, qualifier: $q, value: $v, ts: $timestamp"
+}
 
 case class RedisAtomicIncrementRequest(key: Array[Byte], qualifier: Array[Byte] = null, value: Array[Byte], delta: Long, isDegree: Boolean = false) extends RedisRPC(key) {
   /**
@@ -68,5 +74,9 @@ case class RedisAtomicIncrementRequest(key: Array[Byte], qualifier: Array[Byte] 
   lazy val degreeEdgeKey = Bytes.add(key, RedisRPC.DEGREE_EDGE_POSTFIX_BYTE)
 }
 
-case class RedisDeleteRequest(key: Array[Byte], value: Array[Byte], timestamp: Long) extends RedisRPC(key)
+case class RedisDeleteRequest(key: Array[Byte], value: Array[Byte], timestamp: Long) extends RedisRPC(key) {
+  lazy val k = GraphUtil.bytesToHexString(key)
+  lazy val v = GraphUtil.bytesToHexString(value)
+  override val toString = s"key: $k, value: $v, ts: $timestamp"
+}
 

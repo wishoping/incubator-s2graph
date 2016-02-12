@@ -2,7 +2,7 @@ package com.kakao.s2graph.core.Integrate
 
 import com.kakao.s2graph.core._
 import com.kakao.s2graph.core.mysqls.Label
-import com.kakao.s2graph.core.rest.RequestParser
+import com.kakao.s2graph.core.rest.{RestHandler, RequestParser}
 import com.kakao.s2graph.core.utils.logger
 import com.typesafe.config._
 import org.scalatest._
@@ -10,6 +10,7 @@ import play.api.libs.json.{JsValue, Json}
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.Random
 
 trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
 
@@ -95,6 +96,40 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
     //      val s = Json.toJson(arr)
     //      s
     //    }
+
+    def vertexQueryJson(serviceName: String, columnName: String, ids: Seq[Int]) = {
+      Json.parse(
+        s"""
+        |[
+        | {"serviceName": "$serviceName", "columnName": "$columnName", "ids": [${ids.mkString(",")}]}
+        |]
+       """.stripMargin)
+    }
+
+    def vertexInsertsPayload(serviceName: String, columnName: String, ids: Seq[Int]): Seq[JsValue] = {
+      ids.map { id =>
+        Json.obj("id" -> id, "props" -> randomProps, "timestamp" -> System.currentTimeMillis())
+      }
+    }
+
+    val vertexPropsKeys = List(
+      ("age", "int")
+    )
+
+    def randomProps() = {
+      (for {
+        (propKey, propType) <- vertexPropsKeys
+      } yield {
+          propKey -> Random.nextInt(100)
+        }).toMap
+    }
+
+    def getVerticesSync(queryJson: JsValue): JsValue = {
+      val restHandler = new RestHandler(graph)
+      logger.info(Json.prettyPrint(queryJson))
+      val f = restHandler.getVertices(queryJson)
+      Await.result(f, HttpRequestWaitingTime)
+    }
 
     def deleteAllSync(jsValue: JsValue) = {
       val future = Future.sequence(jsValue.as[Seq[JsValue]] map { json =>

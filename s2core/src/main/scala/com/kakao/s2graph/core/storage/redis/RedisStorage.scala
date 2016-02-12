@@ -1,19 +1,22 @@
 package com.kakao.s2graph.core.storage.redis
 
-import _root_.redis.clients.jedis.Protocol
-import _root_.redis.clients.util.SafeEncoder
+import java.util
+
 import com.google.common.cache.Cache
 import com.kakao.s2graph.core.GraphExceptions.{FetchTimeoutException, PartialFailureException}
 import com.kakao.s2graph.core._
-import com.kakao.s2graph.core.mysqls.{Label, LabelMeta}
+import com.kakao.s2graph.core.mysqls.Label
 import com.kakao.s2graph.core.storage._
 import com.kakao.s2graph.core.storage.redis.jedis.JedisTransaction
 import com.kakao.s2graph.core.utils.{AsyncRedisClient, logger}
 import com.typesafe.config.Config
 import org.apache.hadoop.hbase.util.Bytes
+import org.hbase.async.KeyValue
 
 import scala.collection.JavaConversions._
+import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.hashing.MurmurHash3
 import scala.util.{Failure, Random, Success}
 
 /**
@@ -35,6 +38,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   val FailProb = config.getDouble("hbase.fail.prob")
   val LockExpireDuration = Math.max(MaxRetryNum * MaxBackOff * 2, 10000)
   val RedisZsetScore = 1
+  val emptyKVs = new util.ArrayList[KeyValue]()
 
   val snapshotEdgeDeserializer = new RedisSnapshotEdgeDeserializable
   val indexEdgeDeserializer = new RedisIndexEdgeDeserializable
@@ -103,10 +107,10 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       client.doBlockWithKey[Boolean]("" /* sharding key */) { jedis =>
         val write = rpc match {
           case d: RedisDeleteRequest => if (jedis.zrem(d.key, d.value) == 1) true else false
-          case p: RedisPutRequest if p.qualifier.length > 0 => // Edge put operation
+          case p: RedisPutRequest if p.qualifier.length == 0 => // Edge put operation
             logger.info(s">> [writeToStorage] edge put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
             if (jedis.zadd(p.key, RedisZsetScore, p.value) == 1) true else false
-          case p: RedisPutRequest if p.qualifier.length == 0 => // Vertex put operation
+          case p: RedisPutRequest if p.qualifier.length > 0 => // Vertex put operation
             logger.info(s">> [writeToStorage] vertex put : row - ${GraphUtil.bytesToHexString(p.key)}, q : ${GraphUtil.bytesToHexString(p.qualifier)}, v : ${GraphUtil.bytesToHexString(p.value)}")
             if (jedis.zadd(p.key, RedisZsetScore, p.qualifier ++ p.value) == 1) true else false
           case i: RedisAtomicIncrementRequest =>
@@ -232,6 +236,32 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
     val vertexFuture = writeAsyncSimple(mutationBuilder.buildVertexPutsAsync(edge), withWait)
     Future.sequence(Seq(edgeFuture, vertexFuture)).map { rets => rets.forall(identity) }
+  }
+
+  override def mutateEdges(edges: Seq[Edge], withWait: Boolean): Future[Seq[Boolean]] = {
+    val edgeGrouped = edges.groupBy { edge => (edge.label, edge.srcVertex.innerId, edge.tgtVertex.innerId) } toSeq
+
+    val ret = edgeGrouped.map { case ((label, srcId, tgtId), edges) =>
+      if (edges.isEmpty) Future.successful(true)
+      else {
+        val head = edges.head
+        val strongConsistency = head.label.consistencyLevel == "strong"
+
+        if (strongConsistency) {
+          val edgeFuture = mutateEdgesInner(edges, strongConsistency, withWait)(Edge.buildOperation)
+          //TODO: decide what we will do on failure on vertex put
+          val vertexFuture = writeAsyncSimple(mutationBuilder.buildVertexPutsAsync(head), withWait)
+          Future.sequence(Seq(edgeFuture, vertexFuture)).map { rets => rets.forall(identity) }
+        } else {
+          Future.sequence(edges.map { edge =>
+            mutateEdge(edge, withWait = withWait)
+          }).map { rets =>
+            rets.forall(identity)
+          }
+        }
+      }
+    }
+    Future.sequence(ret)
   }
 
   private def writeAsyncSimple(rpcs: Seq[RedisRPC], withWait: Boolean): Future[Boolean] = {
@@ -594,5 +624,49 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   }
 
 
-  override def getVertices(vertices: Seq[Vertex]): Future[Seq[Vertex]] = ???
+  def getVertices(vertices: Seq[Vertex]): Future[Seq[Vertex]] = {
+    def fromResult(queryParam: QueryParam,
+                   kvs: Seq[SKeyValue],
+                   version: String): Option[Vertex] = {
+
+      if (kvs.isEmpty) None
+      else {
+        Option(vertexDeserializer.fromKeyValues(queryParam, kvs, version, None))
+      }
+    }
+
+    val futures = vertices.map { vertex =>
+      logger.info(s"vertices: ${vertex.toLogString()}")
+      val kvs = vertexSerializer(vertex).toKeyValues
+      val get = new RedisGetRequest(kvs.head.row, false)
+
+      val cacheKey = MurmurHash3.stringHash(get.toString)
+      val cacheVal = vertexCache.getIfPresent(cacheKey)
+      if (cacheVal == null) {
+        val result = client.doBlockWithKey[Set[SKeyValue]]("" /* sharding key */) { jedis =>
+          get.setFilter("-".getBytes, true, "+".getBytes, true)
+          logger.info(s"key: ${GraphUtil.bytesToHexString(get.key)}")
+          logger.info(s"min: ${GraphUtil.bytesToHexString(get.min)}")
+          logger.info(s"max: ${GraphUtil.bytesToHexString(get.max)}")
+          logger.info(s"offset: ${get.offset}")
+          logger.info(s"count: ${get.count}")
+          jedis.zrangeByLex(get.key, get.min, get.max).toSet[Array[Byte]].map(v =>
+            SKeyValue(Array.empty[Byte], get.key, Array.empty[Byte], Array.empty[Byte], v, 0L)
+          )
+        } match {
+          case Success(v) =>
+            v
+          case Failure(e) =>
+            logger.error(s"Redis vertex get fail: ", e)
+            Set[SKeyValue]()
+        }
+        val fetchVal = fromResult(QueryParam.Empty, result.toSeq, vertex.serviceColumn.schemaVersion)
+        Future.successful(fetchVal)
+      }
+
+      else Future.successful(cacheVal)
+    }
+
+    Future.sequence(futures).map { result => result.toList.flatten }
+  }
 }
