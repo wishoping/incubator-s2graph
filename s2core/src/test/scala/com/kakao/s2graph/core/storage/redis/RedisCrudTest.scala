@@ -10,7 +10,7 @@ import org.scalatest.BeforeAndAfterEach
 import play.api.libs.json.{JsValue, Json}
 
 import scala.collection.JavaConversions._
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{Await, ExecutionContext}
 
 /**
  * Created by june.kay on 2016. 1. 20..
@@ -141,6 +141,25 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
     logger.info("vertex get result: " + rs.toString())
     rs.as[Array[JsValue]].size should be (2)
   }
+
+  test("insert vertex") {
+    val ids = (3 until 6)
+    val data = vertexInsertsPayload(testServiceName, testColumnName, ids)
+    val payload = Json.parse(Json.toJson(data).toString())
+    logger.info(Json.prettyPrint(payload))
+
+    val vertices = parser.toVertices(payload, "insert", Option(testServiceName), Option(testColumnName))
+    Await.result(graph.mutateVertices(vertices, true), HttpRequestWaitingTime)
+
+
+    val q = vertexQueryJson(testServiceName, testColumnName, ids)
+    logger.info("vertex get query: " + q.toString())
+
+    val rs = getVerticesSync(q)
+    logger.info("vertex get result: " + rs.toString())
+    rs.as[Array[JsValue]].size should be (3)
+  }
+
   test("test increment") {
     val incrementVal = 10
     mutateEdgesSync(

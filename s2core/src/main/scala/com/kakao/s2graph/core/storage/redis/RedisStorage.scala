@@ -217,7 +217,16 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
   override def incrementCounts(edges: Seq[Edge]): Future[Seq[(Boolean, Long)]] = ???
 
-  override def mutateVertex(vertex: Vertex, withWait: Boolean): Future[Boolean] = ???
+  override def mutateVertex(vertex: Vertex, withWait: Boolean): Future[Boolean] = {
+    if (vertex.op == GraphUtil.operations("delete")) {
+      writeAsyncSimple(mutationBuilder.buildDeleteAsync(vertex), withWait)
+    } else if (vertex.op == GraphUtil.operations("deleteAll")) {
+      logger.info(s"deleteAll for vertex is truncated. $vertex")
+      Future.successful(true) // Ignore withWait parameter, because deleteAll operation may takes long time
+    } else {
+      writeAsyncSimple(mutationBuilder.buildPutsAll(vertex), withWait)
+    }
+  }
 
   override def mutateEdge(edge: Edge, withWait: Boolean): Future[Boolean] = {
     //    mutateEdgeWithOp(edge, withWait)
