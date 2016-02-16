@@ -142,6 +142,26 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
       Await.result(future, HttpRequestWaitingTime)
     }
 
+    def querySingle(id: Int, dir: String = "out", offset: Int = 0, limit: Int = 10) = Json.parse(
+      s"""
+      |{
+      |	"srcVertices": [{
+      |		"serviceName": "$testServiceName",
+      |		"columnName": "$testColumnName",
+      |		"id": $id
+      |	}],
+      |	"steps": [
+      |		[{
+      |			"label": "$testLabelName2",
+      |			"direction": "$dir",
+      |			"offset": $offset,
+      |			"limit": $limit
+      |		}]
+      |	]
+      |}
+      """.stripMargin
+    )
+
     def getEdgesSync(queryJson: JsValue): JsValue = {
       logger.info(Json.prettyPrint(queryJson))
 
