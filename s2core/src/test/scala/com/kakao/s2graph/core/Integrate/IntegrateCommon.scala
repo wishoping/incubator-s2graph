@@ -47,8 +47,8 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
       Management.createService(serviceName, cluster, tableName, preSplitSize, ttl, compressionAlgorithm)
     logger.info(s">> Service created : $createService, $tryRes")
 
-    val labelNames = Map(testLabelName -> testLabelNameCreate,
-      testLabelName2 -> testLabelName2Create,
+    val labelNames = Map(testLabelNameV2 -> testLabelNameV2Create,
+      testLabelNameV3 -> testLabelNameV3Create,
       testLabelNameV1 -> testLabelNameV1Create,
       testLabelNameWeak -> testLabelNameWeakCreate)
 
@@ -142,6 +142,26 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
       Await.result(future, HttpRequestWaitingTime)
     }
 
+    def querySingle(id: Int, dir: String = "out", offset: Int = 0, limit: Int = 10) = Json.parse(
+      s"""
+      |{
+      |	"srcVertices": [{
+      |		"serviceName": "$testServiceName",
+      |		"columnName": "$testColumnName",
+      |		"id": $id
+      |	}],
+      |	"steps": [
+      |		[{
+      |			"label": "$testLabelNameV3",
+      |			"direction": "$dir",
+      |			"offset": $offset,
+      |			"limit": $limit
+      |		}]
+      |	]
+      |}
+      """.stripMargin
+    )
+
     def getEdgesSync(queryJson: JsValue): JsValue = {
       logger.info(Json.prettyPrint(queryJson))
 
@@ -188,8 +208,8 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
 
     // common tables
     val testServiceName = "s2graph"
-    val testLabelName = "s2graph_label_test"
-    val testLabelName2 = "s2graph_label_test_2"
+    val testLabelNameV3 = "s2graph_label_test_v3"
+    val testLabelNameV2 = "s2graph_label_test_v2"
     val testLabelNameV1 = "s2graph_label_test_v1"
     val testLabelNameWeak = "s2graph_label_test_weak"
     val testColumnName = "user_id_test"
@@ -205,10 +225,10 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
 
     val createService = s"""{"serviceName" : "$testServiceName"}"""
 
-    val testLabelNameCreate =
+    val testLabelNameV2Create =
       s"""
   {
-    "label": "$testLabelName",
+    "label": "$testLabelNameV2",
     "srcServiceName": "$testServiceName",
     "srcColumnName": "$testColumnName",
     "srcColumnType": "long",
@@ -247,10 +267,10 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
     "hTableName": "$testHTableName"
   }"""
 
-    val testLabelName2Create =
+    val testLabelNameV3Create =
       s"""
   {
-    "label": "$testLabelName2",
+    "label": "$testLabelNameV3",
     "srcServiceName": "$testServiceName",
     "srcColumnName": "$testColumnName",
     "srcColumnType": "long",

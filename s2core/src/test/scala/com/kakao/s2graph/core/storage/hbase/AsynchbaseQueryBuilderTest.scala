@@ -1,8 +1,7 @@
 package com.kakao.s2graph.core.storage.hbase
 
-import com.kakao.s2graph.core.Graph
-import com.typesafe.config.ConfigFactory
-
+import com.kakao.s2graph.core.{HBaseTest, Graph}
+import com.typesafe.config.{ConfigValueFactory, ConfigFactory}
 import org.apache.hadoop.hbase.util.Bytes
 import org.hbase.async.GetRequest
 import org.scalatest.{FunSuite, Matchers}
@@ -21,11 +20,12 @@ class AsynchbaseQueryBuilderTest extends FunSuite with Matchers {
 
   implicit val ec = ExecutionContext.Implicits.global
   val config = ConfigFactory.load()
+    .withValue("storage.engine", ConfigValueFactory.fromAnyRef("hbase")) // for redis test
   val graph = new Graph(config)
 
   val qb = new AsynchbaseQueryBuilder(graph.storage.asInstanceOf[AsynchbaseStorage])
 
-  test("test toCacheKeyBytes") {
+  test("test toCacheKeyBytes", HBaseTest) {
     val startedAt = System.nanoTime()
 
     for {

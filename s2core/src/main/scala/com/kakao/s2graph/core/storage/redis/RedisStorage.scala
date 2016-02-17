@@ -5,10 +5,11 @@ import java.util
 import com.google.common.cache.Cache
 import com.kakao.s2graph.core.GraphExceptions.{FetchTimeoutException, PartialFailureException}
 import com.kakao.s2graph.core._
-import com.kakao.s2graph.core.mysqls.Label
+import com.kakao.s2graph.core.mysqls.{Label, LabelMeta}
 import com.kakao.s2graph.core.storage._
 import com.kakao.s2graph.core.storage.redis.jedis.JedisTransaction
-import com.kakao.s2graph.core.utils.{AsyncRedisClient, logger}
+import com.kakao.s2graph.core.types.{InnerValLikeWithTs, LabelWithDirection}
+import com.kakao.s2graph.core.utils.{AsyncRedisClient, Extensions, logger}
 import com.typesafe.config.Config
 import org.apache.hadoop.hbase.util.Bytes
 import org.hbase.async.KeyValue
@@ -68,7 +69,7 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
 
   override def flush(): Unit = {}
 
-  override def vertexCacheOpt: Option[Cache[Integer, Option[Vertex]]] = ???
+  val vertexCacheOpt = Option(vertexCache)
 
   def toHex(b: Array[Byte]): String = {
     val tmp = b.map("%02x".format(_)).mkString("\\x")
@@ -195,7 +196,6 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
         jedis.incrBy(req.degreeEdgeKey, req.delta)
       else
         jedis.incrBy(req.key, req.delta)
-
       jedis.unwatch()
       true
     } match {
@@ -213,7 +213,94 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
   // Interface
   override def getEdges(q: Query): Future[Seq[QueryRequestWithResult]] = queryBuilder.getEdges(q)
 
-  override def deleteAllAdjacentEdges(srcVertices: List[Vertex], labels: Seq[Label], dir: Int, ts: Long): Future[Boolean] = ???
+  private def buildEdgesToDelete(queryRequestWithResultLs: QueryRequestWithResult, requestTs: Long): QueryResult = {
+    val (queryRequest, queryResult) = QueryRequestWithResult.unapply(queryRequestWithResultLs).get
+    val edgeWithScoreLs = queryResult.edgeWithScoreLs.filter { edgeWithScore =>
+      (edgeWithScore.edge.ts < requestTs) && !edgeWithScore.edge.isDegree
+    }.map { edgeWithScore =>
+      val label = queryRequest.queryParam.label
+      val newPropsWithTs = edgeWithScore.edge.propsWithTs ++
+        Map(LabelMeta.timeStampSeq -> InnerValLikeWithTs.withLong(requestTs, requestTs, label.schemaVersion))
+      val copiedEdge = edgeWithScore.edge.copy(op = GraphUtil.operations("delete"), version = requestTs,
+        propsWithTs = newPropsWithTs)
+      edgeWithScore.copy(edge = copiedEdge)
+    }
+    queryResult.copy(edgeWithScoreLs = edgeWithScoreLs)
+  }
+
+  private def deleteAllFetchedEdgesLs(queryRequestWithResultLs: Seq[QueryRequestWithResult], requestTs: Long): Future[(Boolean, Boolean)] = {
+    val queryResultLs = queryRequestWithResultLs.map(_.queryResult)
+    queryResultLs.foreach { queryResult =>
+      if (queryResult.isFailure) throw new RuntimeException("fetched result is fallback.")
+    }
+
+    val futures = for {
+      queryRequestWithResult <- queryRequestWithResultLs
+      (queryRequest, queryResult) = QueryRequestWithResult.unapply(queryRequestWithResult).get
+      deleteQueryResult = buildEdgesToDelete(queryRequestWithResult, requestTs)
+      if deleteQueryResult.edgeWithScoreLs.nonEmpty
+    } yield {
+        val label = queryRequest.queryParam.label
+        label.schemaVersion match {
+          case "v3" if label.consistencyLevel == "strong" =>
+
+            /**
+             * read: snapshotEdge on queryResult = O(N)
+             * write: N x (relatedEdges x indices(indexedEdge) + 1(snapshotEdge))
+             */
+            mutateEdges(deleteQueryResult.edgeWithScoreLs.map(_.edge), withWait = true).map { rets => rets.forall(identity) }
+          case _ =>
+
+            logger.error("Redis storage only supports v3.")
+            Future(false)
+        }
+      }
+    if (futures.isEmpty) {
+      // all deleted.
+      Future.successful(true -> true)
+    } else {
+      Future.sequence(futures).map { rets => false -> rets.forall(identity) }
+    }
+  }
+
+  def fetchAndDeleteAll(query: Query, requestTs: Long): Future[(Boolean, Boolean)] = {
+    val future = for {
+      queryRequestWithResultLs <- getEdges(query)
+      (allDeleted, ret) <- deleteAllFetchedEdgesLs(queryRequestWithResultLs, requestTs)
+    } yield {
+        (allDeleted, ret)
+      }
+    Extensions.retryOnFailure(MaxRetryNum) {
+      future
+    } {
+      logger.error(s"fetch and deleteAll failed.")
+      (true, false)
+    }
+
+  }
+
+  override def deleteAllAdjacentEdges(srcVertices: List[Vertex],
+                                      labels: Seq[Label],
+                                      dir: Int,
+                                      ts: Long): Future[Boolean] = {
+    val requestTs = ts
+    val queryParams = for {
+      label <- labels
+    } yield {
+        val labelWithDir = LabelWithDirection(label.id.get, dir)
+        QueryParam(labelWithDir).limit(0, DeleteAllFetchSize).duplicatePolicy(Option(Query.DuplicatePolicy.Raw))
+      }
+
+    val step = Step(queryParams.toList)
+    val q = Query(srcVertices, Vector(step))
+
+    //    Extensions.retryOnSuccessWithBackoff(MaxRetryNum, Random.nextInt(MaxBackOff) + 1) {
+    Extensions.retryOnSuccess(MaxRetryNum) {
+      fetchAndDeleteAll(q, requestTs)
+    } { case (allDeleted, deleteSuccess) =>
+      allDeleted && deleteSuccess
+    }.map { case (allDeleted, deleteSuccess) => allDeleted && deleteSuccess }
+  }
 
   override def incrementCounts(edges: Seq[Edge]): Future[Seq[(Boolean, Long)]] = ???
 
@@ -284,8 +371,6 @@ class RedisStorage(val config: Config, vertexCache: Cache[Integer, Option[Vertex
       else
         Future.successful(true)
     }
-
-
   }
 
   private def fetchSnapshotEdge(edge: Edge): Future[(QueryParam, Option[Edge], Option[SKeyValue])] = {

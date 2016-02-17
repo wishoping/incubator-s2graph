@@ -2,6 +2,7 @@ package com.kakao.s2graph.core.Integrate
 
 import java.util.concurrent.TimeUnit
 
+import com.kakao.s2graph.core.V3Test
 import play.api.libs.json.{JsValue, Json}
 
 import scala.concurrent.duration.Duration
@@ -13,7 +14,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
   import StrongDeleteUtil._
   import TestUtil._
 
-  test("Strong consistency select") {
+  test("Strong consistency select", V3Test) {
     insertEdgesSync(bulkEdges(): _*)
 
     var result = getEdgesSync(query(0))
@@ -22,7 +23,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     (result \ "results").as[List[JsValue]].size should be(2)
   }
 
-  test("Strong consistency deleteAll") {
+  test("Strong consistency deleteAll", V3Test) {
     val deletedAt = 100
     var result = getEdgesSync(query(20, direction = "in", columnName = testTgtColumnName))
 
@@ -30,7 +31,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     (result \ "results").as[List[JsValue]].size should be(3)
 
     val deleteParam = Json.arr(
-      Json.obj("label" -> testLabelName2,
+      Json.obj("label" -> testLabelNameV3,
         "direction" -> "in",
         "ids" -> Json.arr("20"),
         "timestamp" -> deletedAt))
@@ -65,7 +66,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
   }
 
 
-  test("update delete") {
+  test("update delete", V3Test) {
     val ret = for {
       i <- 0 until testNum
     } yield {
@@ -79,7 +80,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     ret.forall(identity)
   }
 
-  test("update delete 2") {
+  test("update delete 2", V3Test) {
     val src = System.currentTimeMillis()
     var ts = 0L
 
@@ -118,8 +119,8 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     * when contention is low but number of adjacent edges are large
     * Large set of contention test
   */
-  test("large degrees") {
-    val labelName = testLabelName2
+  test("large degrees", V3Test) {
+    val labelName = testLabelNameV3
     val dir = "out"
     val maxSize = 100
     val deleteSize = 10
@@ -158,8 +159,8 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     ret should be(true)
   }
 
-  test("deleteAll") {
-    val labelName = testLabelName2
+  test("deleteAll", V3Test) {
+    val labelName = testLabelNameV3
     val dir = "out"
     val maxSize = 100
     val deleteSize = 10
@@ -196,14 +197,14 @@ class StrongLabelDeleteTest extends IntegrateCommon {
 
   object StrongDeleteUtil {
 
-    val labelName = testLabelName2
+    val labelName = testLabelNameV3
     val maxTgtId = 10
     val batchSize = 10
     val testNum = 3
     val numOfBatch = 10
 
     def testInner(startTs: Long, src: Long) = {
-      val labelName = testLabelName2
+      val labelName = testLabelNameV3
       val lastOps = Array.fill(maxTgtId)("none")
       var currentTs = startTs
 
@@ -244,18 +245,18 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     }
 
     def bulkEdges(startTs: Int = 0) = Seq(
-      toEdge(startTs + 1, "insert", "e", "0", "1", testLabelName2, s"""{"time": 10}"""),
-      toEdge(startTs + 2, "insert", "e", "0", "1", testLabelName2, s"""{"time": 11}"""),
-      toEdge(startTs + 3, "insert", "e", "0", "1", testLabelName2, s"""{"time": 12}"""),
-      toEdge(startTs + 4, "insert", "e", "0", "2", testLabelName2, s"""{"time": 10}"""),
-      toEdge(startTs + 5, "insert", "e", "10", "20", testLabelName2, s"""{"time": 10}"""),
-      toEdge(startTs + 6, "insert", "e", "10", "21", testLabelName2, s"""{"time": 11}"""),
-      toEdge(startTs + 7, "insert", "e", "11", "20", testLabelName2, s"""{"time": 12}"""),
-      toEdge(startTs + 8, "insert", "e", "12", "20", testLabelName2, s"""{"time": 13}""")
+      toEdge(startTs + 1, "insert", "e", "0", "1", testLabelNameV3, s"""{"time": 10}"""),
+      toEdge(startTs + 2, "insert", "e", "0", "1", testLabelNameV3, s"""{"time": 11}"""),
+      toEdge(startTs + 3, "insert", "e", "0", "1", testLabelNameV3, s"""{"time": 12}"""),
+      toEdge(startTs + 4, "insert", "e", "0", "2", testLabelNameV3, s"""{"time": 10}"""),
+      toEdge(startTs + 5, "insert", "e", "10", "20", testLabelNameV3, s"""{"time": 10}"""),
+      toEdge(startTs + 6, "insert", "e", "10", "21", testLabelNameV3, s"""{"time": 11}"""),
+      toEdge(startTs + 7, "insert", "e", "11", "20", testLabelNameV3, s"""{"time": 12}"""),
+      toEdge(startTs + 8, "insert", "e", "12", "20", testLabelNameV3, s"""{"time": 13}""")
     )
 
     def query(id: Long, serviceName: String = testServiceName, columnName: String = testColumnName,
-              labelName: String = testLabelName2, direction: String = "out") = Json.parse(
+              labelName: String = testLabelNameV3, direction: String = "out") = Json.parse(
       s"""
           { "srcVertices": [
             { "serviceName": "$serviceName",

@@ -4,7 +4,7 @@ import com.kakao.s2graph.core.Integrate.IntegrateCommon
 import com.kakao.s2graph.core.mysqls.Label
 import com.kakao.s2graph.core.rest.RequestParser
 import com.kakao.s2graph.core.utils.logger
-import com.kakao.s2graph.core.{Graph, Management}
+import com.kakao.s2graph.core.{RedisTest, Graph, Management}
 import com.typesafe.config.{ConfigFactory, ConfigValueFactory}
 import org.scalatest.BeforeAndAfterEach
 import play.api.libs.json.{JsValue, Json}
@@ -53,7 +53,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
     logger.info(s">> Service created : $createService, $tryRes")
 
     // with only v3 label
-    val labelNames = Map(testLabelName2 -> testLabelName2Create)
+    val labelNames = Map(testLabelNameV3 -> testLabelNameV3Create)
 
     for {
       (labelName, create) <- labelNames
@@ -83,15 +83,17 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
   }
 
 
-  test("test insert/check/get edges") {
+  test("test insert/check/get edges", RedisTest) {
     insertEdgesSync(
-      toEdge(1, insert, e, 1, 1000, testLabelName2),
-      toEdge(1, insert, e, 2, 2000, testLabelName2)
+      toEdge(1, insert, e, 1, 1000, testLabelNameV3),
+      toEdge(1, insert, e, 1, 1100, testLabelNameV3),
+      toEdge(1, insert, e, 1, 1110, testLabelNameV3),
+      toEdge(1, insert, e, 2, 2000, testLabelNameV3)
     )
     def queryCheckEdges(fromId: Int, toId: Int): JsValue = Json.parse(
       s"""
          |[{
-         |  "label": "$testLabelName2",
+         |  "label": "$testLabelNameV3",
          |  "direction": "out",
          |  "from": $fromId,
          |  "to": $toId
@@ -109,7 +111,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
          |	}],
          |	"steps": [
          |		[{
-         |			"label": "$testLabelName2",
+         |			"label": "$testLabelNameV3",
          |			"direction": "out",
          |			"offset": $offset,
          |			"limit": $limit
@@ -129,10 +131,10 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
 
     result = getEdgesSync(querySingle(1, 0, 10))
     logger.info(result.toString())
-    (result \ "size").toString should be("1") // edge 1 -> 2000 should be present
+    (result \ "size").toString should be("3") // edge 1 -> 1000, 1100, 1110 should be present
   }
 
-  test("get vertex") {
+  test("get vertex", RedisTest) {
     val ids = Array(1, 2)
     val q = vertexQueryJson(testServiceName, testColumnName, ids)
     logger.info("vertex get query: " + q.toString())
@@ -142,7 +144,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
     rs.as[Array[JsValue]].size should be (2)
   }
 
-  test("insert vertex") {
+  test("insert vertex", RedisTest) {
     val ids = (3 until 6)
     val data = vertexInsertsPayload(testServiceName, testColumnName, ids)
     val payload = Json.parse(Json.toJson(data).toString())
@@ -160,39 +162,65 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
     rs.as[Array[JsValue]].size should be (3)
   }
 
-  test("test increment") {
+  test("test increment", RedisTest) {
+    def queryTo(id: Int, to:Int, offset: Int = 0, limit: Int = 10) = Json.parse(
+      s"""
+      |{
+      |	"srcVertices": [{
+      |		"serviceName": "$testServiceName",
+      |		"columnName": "$testColumnName",
+      |		"id": $id
+      |	}],
+      |	"steps": [
+      |		[{
+      |			"label": "$testLabelNameV3",
+      |			"direction": "out",
+      |			"offset": $offset,
+      |			"limit": $limit,
+      |     "where": "_to=$to"
+      |		}]
+      |	]
+      |}
+      """.stripMargin
+    )
+
     val incrementVal = 10
     mutateEdgesSync(
-      toEdge(1, increment, e, 3, 4, testLabelName2, "{\"weight\":%s}".format(incrementVal), "out")
-    )
-    def querySingle(id: Int, to:Int, offset: Int = 0, limit: Int = 10) = Json.parse(
-      s"""
-         |{
-         |	"srcVertices": [{
-         |		"serviceName": "$testServiceName",
-         |		"columnName": "$testColumnName",
-         |		"id": $id
-         |	}],
-         |	"steps": [
-         |		[{
-         |			"label": "$testLabelName2",
-         |			"direction": "out",
-         |			"offset": $offset,
-         |			"limit": $limit,
-         |      "where": "_to=$to"
-         |		}]
-         |	]
-         |}
-       """.stripMargin
+      toEdge(1, increment, e, 3, 4, testLabelNameV3, "{\"weight\":%s}".format(incrementVal), "out")
     )
 
     // TODO need to change from checkEdges to getEdges, after implements `getEdges` feature
-    val resp = getEdgesSync(querySingle(3, 4))
-    logger.info(s"Result : ${Json.prettyPrint(resp)}")
+    val resp = getEdgesSync(queryTo(3, 4))
+    logger.info(s"Result: ${Json.prettyPrint(resp)}")
     (resp \ "size").toString should be ("1")  // edge 1 -> 1000 should be present
 
     val result = (resp \\ "results" ).head(0)
     (result \ "props" \ "weight" ).toString should be (s"$incrementVal")  // edge 1 -> 1000 should be present
+  }
+
+  test("deleteAll", RedisTest) {
+    val deletedAt = 100
+    var result = getEdgesSync(querySingle(1, "out", 0, 10))
+
+    logger.info(s"before deleteAll: ${Json.prettyPrint(result)}")
+
+    result = getEdgesSync(querySingle(1, "out", 0, 10))
+    logger.info(result.toString())
+    (result \ "size").toString should be("3") // edge 1 -> 1000, 1100, 1110 should be present
+
+    val deleteParam = Json.arr(
+      Json.obj("label" -> testLabelNameV3,
+        "direction" -> "out",
+        "ids" -> Json.arr("1"),
+        "timestamp" -> deletedAt
+      )
+    )
+    deleteAllSync(deleteParam)
+
+    result = getEdgesSync(querySingle(1, "out", 0, 10))
+    logger.info(result.toString())
+    (result \ "size").toString should be("0") // edge 1 -> 1000, 1100, 1110 should be deleted
+
   }
 
 }

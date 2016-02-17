@@ -4,12 +4,11 @@ import com.kakao.s2graph.core.mysqls.LabelMeta
 import com.kakao.s2graph.core.types.{InnerVal, InnerValLikeWithTs, VertexId}
 import com.kakao.s2graph.core.utils.logger
 import org.scalatest.FunSuite
-import org.scalatest.matchers.Matcher
 
 class EdgeTest extends FunSuite with TestCommon with TestCommonWithModels {
   initTests()
 
-  test("toLogString") {
+  test("toLogString", V2Test) {
     val testLabelName = labelNameV2
     val bulkQueries = List(
       ("1445240543366", "update", "{\"is_blocked\":true}"),
@@ -35,7 +34,7 @@ class EdgeTest extends FunSuite with TestCommon with TestCommonWithModels {
     assert(bulkEdge === expected)
   }
 
-  test("buildOperation") {
+  test("buildOperation", V2Test) {
     val schemaVersion = "v2"
     val vertexId = VertexId(0, InnerVal.withStr("dummy", schemaVersion))
     val srcVertex = Vertex(vertexId)
@@ -61,7 +60,7 @@ class EdgeTest extends FunSuite with TestCommon with TestCommonWithModels {
     assert(edgeMutate.edgesToDelete.isEmpty)
   }
 
-  test("buildMutation: snapshotEdge: None with newProps") {
+  test("buildMutation: snapshotEdge: None with newProps", V2Test) {
     val schemaVersion = "v2"
     val vertexId = VertexId(0, InnerVal.withStr("dummy", schemaVersion))
     val srcVertex = Vertex(vertexId)
@@ -87,7 +86,7 @@ class EdgeTest extends FunSuite with TestCommon with TestCommonWithModels {
     assert(edgeMutate.edgesToDelete.isEmpty)
   }
 
-  test("buildMutation: oldPropsWithTs == newPropsWithTs, Drop all requests") {
+  test("buildMutation: oldPropsWithTs == newPropsWithTs, Drop all requests", V2Test) {
     val schemaVersion = "v2"
     val vertexId = VertexId(0, InnerVal.withStr("dummy", schemaVersion))
     val srcVertex = Vertex(vertexId)
@@ -110,7 +109,7 @@ class EdgeTest extends FunSuite with TestCommon with TestCommonWithModels {
     assert(edgeMutate.edgesToDelete.isEmpty)
   }
 
-  test("buildMutation: All props older than snapshotEdge's LastDeletedAt") {
+  test("buildMutation: All props older than snapshotEdge's LastDeletedAt", V2Test) {
     val schemaVersion = "v2"
     val vertexId = VertexId(0, InnerVal.withStr("dummy", schemaVersion))
     val srcVertex = Vertex(vertexId)
@@ -141,7 +140,7 @@ class EdgeTest extends FunSuite with TestCommon with TestCommonWithModels {
     assert(edgeMutate.edgesToDelete.isEmpty)
   }
 
-  test("buildMutation: All props newer than snapshotEdge's LastDeletedAt") {
+  test("buildMutation: All props newer than snapshotEdge's LastDeletedAt", V2Test) {
     val schemaVersion = "v2"
     val vertexId = VertexId(0, InnerVal.withStr("dummy", schemaVersion))
     val srcVertex = Vertex(vertexId)
