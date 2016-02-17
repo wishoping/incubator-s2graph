@@ -1,13 +1,8 @@
 package com.kakao.s2graph.core.models
 
-import java.util.concurrent.ExecutorService
-
-import com.kakao.s2graph.core.mysqls.{Label, Model}
-import com.kakao.s2graph.core.{TestCommonWithModels, TestCommon, Graph}
-import com.typesafe.config.ConfigFactory
-import org.scalatest.{BeforeAndAfterAll, Sequential, FunSuite, Matchers}
-
-import scala.concurrent.ExecutionContext
+import com.kakao.s2graph.core.mysqls.Label
+import com.kakao.s2graph.core.{CommonTest, TestCommonWithModels}
+import org.scalatest.{BeforeAndAfterAll, FunSuite, Matchers}
 
 class ModelTest extends FunSuite with Matchers with TestCommonWithModels with BeforeAndAfterAll {
   override def beforeAll(): Unit = {
@@ -46,7 +41,7 @@ class ModelTest extends FunSuite with Matchers with TestCommonWithModels with Be
   //    "defaultValue" -> false, "dataType" -> "boolean", "usedInIndex" -> false))
   //  val labelIndex = HLabelIndex(Map("id" -> id, "labelId" -> label.id.get, "seq" -> 1.toByte,
   //    "metaSeqs" -> "0", "formular" -> "none"))
-  test("test Label.findByName") {
+  test("test Label.findByName", CommonTest) {
     val labelOpt = Label.findByName(labelName, useCache = false)
     println(labelOpt)
     labelOpt.isDefined shouldBe true

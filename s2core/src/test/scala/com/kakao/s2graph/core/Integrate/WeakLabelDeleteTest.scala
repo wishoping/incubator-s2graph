@@ -2,6 +2,7 @@ package com.kakao.s2graph.core.Integrate
 
 import java.util.concurrent.TimeUnit
 
+import com.kakao.s2graph.core.CommonTest
 import org.scalatest.BeforeAndAfterEach
 import play.api.libs.json.{JsObject, JsValue, Json}
 
@@ -13,7 +14,7 @@ class WeakLabelDeleteTest extends IntegrateCommon with BeforeAndAfterEach {
   import TestUtil._
   import WeakLabelDeleteHelper._
 
-  test("test weak consistency select") {
+  test("test weak consistency select", CommonTest) {
     var result = getEdgesSync(query(0))
     println(result)
     (result \ "results").as[List[JsValue]].size should be(4)
@@ -22,7 +23,7 @@ class WeakLabelDeleteTest extends IntegrateCommon with BeforeAndAfterEach {
     (result \ "results").as[List[JsValue]].size should be(2)
   }
 
-  test("test weak consistency delete") {
+  test("test weak consistency delete", CommonTest) {
     var result = getEdgesSync(query(0))
     println(result)
 
@@ -48,7 +49,7 @@ class WeakLabelDeleteTest extends IntegrateCommon with BeforeAndAfterEach {
   }
 
 
-  test("test weak consistency deleteAll") {
+  test("test weak consistency deleteAll", CommonTest) {
     val deletedAt = 100
     var result = getEdgesSync(query(20, "in", testTgtColumnName))
     println(result)

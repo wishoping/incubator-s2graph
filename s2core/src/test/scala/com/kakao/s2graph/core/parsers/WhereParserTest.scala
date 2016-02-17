@@ -14,6 +14,7 @@ class WhereParserTest extends FunSuite with Matchers with TestCommonWithModels {
   
   import HBaseType.{VERSION1, VERSION2}
 
+  val testTags = List(V1Test, V2Test)
   val ts = System.currentTimeMillis()
   val dummyTs = (LabelMeta.timeStampSeq -> InnerValLikeWithTs.withLong(ts, ts, label.schemaVersion))
 
@@ -52,7 +53,7 @@ class WhereParserTest extends FunSuite with Matchers with TestCommonWithModels {
     ret shouldBe expected
   }
 
-  test("check where clause not nested") {
+  test("check where clause not nested", testTags:_*) {
     for {
       (srcId, tgtId, srcIdStr, tgtIdStr, srcVertex, tgtVertex, srcVertexStr, tgtVertexStr, schemaVer) <- List(ids(VERSION1), ids(VERSION2))
     } {
@@ -71,7 +72,7 @@ class WhereParserTest extends FunSuite with Matchers with TestCommonWithModels {
     }
   }
 
-  test("check where clause nested") {
+  test("check where clause nested", testTags:_*) {
     for {
       (srcId, tgtId, srcIdStr, tgtIdStr, srcVertex, tgtVertex, srcVertexStr, tgtVertexStr, schemaVer) <- List(ids(VERSION1), ids(VERSION2))
     } {
@@ -100,7 +101,7 @@ class WhereParserTest extends FunSuite with Matchers with TestCommonWithModels {
     }
   }
 
-  test("check where clause with from/to long") {
+  test("check where clause with from/to long", testTags:_*) {
     for {
       (srcId, tgtId, srcIdStr, tgtIdStr, srcVertex, tgtVertex, srcVertexStr, tgtVertexStr, schemaVer) <- List(ids(VERSION1), ids(VERSION2))
     } {
@@ -121,7 +122,7 @@ class WhereParserTest extends FunSuite with Matchers with TestCommonWithModels {
   }
 
 
-  test("check where clause with parent") {
+  test("check where clause with parent", testTags:_*) {
     for {
       (srcId, tgtId, srcIdStr, tgtIdStr, srcVertex, tgtVertex, srcVertexStr, tgtVertexStr, schemaVer) <- List(ids(VERSION1), ids(VERSION2))
     } {

@@ -83,11 +83,6 @@ trait IntegrateCommon extends FunSuite with Matchers with BeforeAndAfterAll {
   /**
     * Test Helpers
     */
-  object V2Test extends Tag("V2Test")
-  object V3Test extends Tag("V3Test")
-  object HBaseTest extends Tag("HBaseTest")
-  object RedisTest extends Tag("RedisTest")
-
   object TestUtil {
     implicit def ec = scala.concurrent.ExecutionContext.global
 

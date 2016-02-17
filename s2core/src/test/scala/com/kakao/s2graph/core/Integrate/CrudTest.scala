@@ -1,5 +1,6 @@
 package com.kakao.s2graph.core.Integrate
 
+import com.kakao.s2graph.core.{V3Test, V2Test}
 import com.kakao.s2graph.core.mysqls._
 import play.api.libs.json.{JsObject, Json}
 
@@ -12,7 +13,7 @@ class CrudTest extends IntegrateCommon {
     tcRunner.test("v2")
   }
 
-  test("test CRUD v3", V2Test) {
+  test("test CRUD v3", V3Test) {
     val tcRunner = new CrudTestRunner()
     tcRunner.test("v3")
   }
@@ -185,9 +186,9 @@ class CrudTest extends IntegrateCommon {
 
           /** insert edges */
           println(s"---- TC${tcNum}_init ----")
-          val bulkEdges = (for ((ts, op, props) <- opWithProps) yield {
+          val bulkEdges = for ((ts, op, props) <- opWithProps) yield {
             TestUtil.toEdge(ts, op, "e", srcId, tgtId, labelName, props)
-          })
+          }
 
           TestUtil.insertEdgesSync(bulkEdges: _*)
 

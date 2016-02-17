@@ -2,6 +2,7 @@ package com.kakao.s2graph.core.mysqls
 
 import java.util.Properties
 
+import com.kakao.s2graph.core.CommonTest
 import com.typesafe.config.ConfigFactory
 import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers}
 import scalikejdbc._
@@ -28,7 +29,7 @@ class ExperimentSpec extends FlatSpec with Matchers with BeforeAndAfterAll {
 
   }
 
-  "Experiment" should "find bucket list" in {
+  "Experiment" should "find bucket list" taggedAs CommonTest in {
     Experiment.findBy(1, "exp1") should not be empty
 
     Experiment.findBy(1, "exp1").foreach { exp =>
@@ -37,7 +38,7 @@ class ExperimentSpec extends FlatSpec with Matchers with BeforeAndAfterAll {
     }
   }
 
-  it should "update bucket list after cache ttl time" in {
+  it should "update bucket list after cache ttl time" taggedAs CommonTest in {
     Experiment.findBy(1, "exp1").foreach { exp =>
       val bucket = exp.buckets.head
       bucket.impressionId should equal("imp1")

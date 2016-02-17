@@ -1,16 +1,16 @@
 package com.kakao.s2graph.core.Integrate
 
-import com.kakao.s2graph.core.PostProcess
+import com.kakao.s2graph.core.{CommonTest, PostProcess}
 import play.api.libs.json.{JsValue, Json}
 
 import scala.concurrent.Await
 
 
-class VertexTestHelper extends IntegrateCommon {
+class VertexTest extends IntegrateCommon {
 
   import TestUtil._
 
-  test("vertex") {
+  test("vertex", CommonTest) {
     val ids = (7 until 20).map(tcNum => tcNum * 1000 + 0)
     val (serviceName, columnName) = (testServiceName, testColumnName)
 

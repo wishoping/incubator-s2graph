@@ -1,5 +1,6 @@
 package com.kakao.s2graph.core.Integrate
 
+import com.kakao.s2graph.core.V2Test
 import org.scalatest.BeforeAndAfterEach
 import play.api.libs.json._
 

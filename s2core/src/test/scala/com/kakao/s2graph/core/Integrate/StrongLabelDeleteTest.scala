@@ -2,6 +2,7 @@ package com.kakao.s2graph.core.Integrate
 
 import java.util.concurrent.TimeUnit
 
+import com.kakao.s2graph.core.V3Test
 import play.api.libs.json.{JsValue, Json}
 
 import scala.concurrent.duration.Duration
@@ -13,7 +14,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
   import StrongDeleteUtil._
   import TestUtil._
 
-  test("Strong consistency select") {
+  test("Strong consistency select", V3Test) {
     insertEdgesSync(bulkEdges(): _*)
 
     var result = getEdgesSync(query(0))
@@ -22,7 +23,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     (result \ "results").as[List[JsValue]].size should be(2)
   }
 
-  test("Strong consistency deleteAll") {
+  test("Strong consistency deleteAll", V3Test) {
     val deletedAt = 100
     var result = getEdgesSync(query(20, direction = "in", columnName = testTgtColumnName))
 
@@ -65,7 +66,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
   }
 
 
-  test("update delete") {
+  test("update delete", V3Test) {
     val ret = for {
       i <- 0 until testNum
     } yield {
@@ -79,7 +80,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     ret.forall(identity)
   }
 
-  test("update delete 2") {
+  test("update delete 2", V3Test) {
     val src = System.currentTimeMillis()
     var ts = 0L
 
@@ -118,7 +119,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     * when contention is low but number of adjacent edges are large
     * Large set of contention test
   */
-  test("large degrees") {
+  test("large degrees", V3Test) {
     val labelName = testLabelNameV3
     val dir = "out"
     val maxSize = 100
@@ -158,7 +159,7 @@ class StrongLabelDeleteTest extends IntegrateCommon {
     ret should be(true)
   }
 
-  test("deleteAll") {
+  test("deleteAll", V3Test) {
     val labelName = testLabelNameV3
     val dir = "out"
     val maxSize = 100

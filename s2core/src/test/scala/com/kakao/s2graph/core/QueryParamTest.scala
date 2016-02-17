@@ -31,7 +31,7 @@ class QueryParamTest extends FunSuite with Matchers with TestCommon {
     }
   }
 
-  test("QueryParam toCacheKey bytes") {
+  test("QueryParam toCacheKey bytes", CommonTest) {
     val startedAt = System.nanoTime()
     val queryParam = QueryParam(LabelWithDirection(1, 0))
 
@@ -58,7 +58,7 @@ class QueryParamTest extends FunSuite with Matchers with TestCommon {
     println(s">> bytes: $duration")
   }
 
-  test("QueryParam toCacheKey with variable params") {
+  test("QueryParam toCacheKey with variable params", CommonTest) {
     val startedAt = System.nanoTime()
     val queryParam = QueryParam(LabelWithDirection(1, 0))
 

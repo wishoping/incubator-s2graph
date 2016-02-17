@@ -8,7 +8,9 @@ lazy val commonSettings = Seq(
   javaOptions ++= collection.JavaConversions.propertiesAsScalaMap(System.getProperties).map { case (key, value) => "-D" + key + "=" + value }.toSeq,
   testOptions in Test ++= Seq(
     Tests.Argument("-oDF"),
+    Tests.Argument(TestFrameworks.ScalaTest, "-n", "V1Test"),
     Tests.Argument(TestFrameworks.ScalaTest, "-n", "V2Test"),
+    Tests.Argument(TestFrameworks.ScalaTest, "-n", "V3Test"),
     Tests.Argument(TestFrameworks.ScalaTest, "-n", "HBaseTest")
   ),
   parallelExecution in Test := false,
@@ -43,13 +45,11 @@ lazy val s2core = project.settings(commonSettings: _*).
   settings(inConfig(RedisTest)(Defaults.testTasks): _*).
   settings(
     testOptions in RedisTest --= Seq(
+      Tests.Argument(TestFrameworks.ScalaTest, "-n", "V1Test"),
       Tests.Argument(TestFrameworks.ScalaTest, "-n", "V2Test"),
       Tests.Argument(TestFrameworks.ScalaTest, "-n", "HBaseTest")
     ),
-    testOptions in RedisTest ++= Seq(
-      Tests.Argument(TestFrameworks.ScalaTest, "-n", "V3Test"),
-      Tests.Argument(TestFrameworks.ScalaTest, "-n", "RedisTest")
-    )
+    testOptions in RedisTest += Tests.Argument(TestFrameworks.ScalaTest, "-n", "RedisTest")
   )
 
 
