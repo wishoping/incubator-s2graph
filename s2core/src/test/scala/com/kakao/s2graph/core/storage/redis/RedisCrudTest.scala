@@ -53,7 +53,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
     logger.info(s">> Service created : $createService, $tryRes")
 
     // with only v3 label
-    val labelNames = Map(testLabelName2 -> testLabelName2Create)
+    val labelNames = Map(testLabelNameV3 -> testLabelNameV3Create)
 
     for {
       (labelName, create) <- labelNames
@@ -83,17 +83,17 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
   }
 
 
-  test("test insert/check/get edges") {
+  test("test insert/check/get edges", V3Test) {
     insertEdgesSync(
-      toEdge(1, insert, e, 1, 1000, testLabelName2),
-      toEdge(1, insert, e, 1, 1100, testLabelName2),
-      toEdge(1, insert, e, 1, 1110, testLabelName2),
-      toEdge(1, insert, e, 2, 2000, testLabelName2)
+      toEdge(1, insert, e, 1, 1000, testLabelNameV3),
+      toEdge(1, insert, e, 1, 1100, testLabelNameV3),
+      toEdge(1, insert, e, 1, 1110, testLabelNameV3),
+      toEdge(1, insert, e, 2, 2000, testLabelNameV3)
     )
     def queryCheckEdges(fromId: Int, toId: Int): JsValue = Json.parse(
       s"""
          |[{
-         |  "label": "$testLabelName2",
+         |  "label": "$testLabelNameV3",
          |  "direction": "out",
          |  "from": $fromId,
          |  "to": $toId
@@ -111,7 +111,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
          |	}],
          |	"steps": [
          |		[{
-         |			"label": "$testLabelName2",
+         |			"label": "$testLabelNameV3",
          |			"direction": "out",
          |			"offset": $offset,
          |			"limit": $limit
@@ -173,7 +173,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
       |	}],
       |	"steps": [
       |		[{
-      |			"label": "$testLabelName2",
+      |			"label": "$testLabelNameV3",
       |			"direction": "out",
       |			"offset": $offset,
       |			"limit": $limit,
@@ -186,7 +186,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
 
     val incrementVal = 10
     mutateEdgesSync(
-      toEdge(1, increment, e, 3, 4, testLabelName2, "{\"weight\":%s}".format(incrementVal), "out")
+      toEdge(1, increment, e, 3, 4, testLabelNameV3, "{\"weight\":%s}".format(incrementVal), "out")
     )
 
     // TODO need to change from checkEdges to getEdges, after implements `getEdges` feature
@@ -209,7 +209,7 @@ class RedisCrudTest extends IntegrateCommon with BeforeAndAfterEach {
     (result \ "size").toString should be("3") // edge 1 -> 1000, 1100, 1110 should be present
 
     val deleteParam = Json.arr(
-      Json.obj("label" -> testLabelName2,
+      Json.obj("label" -> testLabelNameV3,
         "direction" -> "out",
         "ids" -> Json.arr("1"),
         "timestamp" -> deletedAt
